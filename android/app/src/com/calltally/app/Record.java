@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 
 /**
@@ -408,6 +409,8 @@ final class Record {
 
     // Settings
 
+    static final String OWN_NUMBERS = "own_numbers";
+
     String setting(String key) {
         try (Cursor c = db().rawQuery("SELECT value FROM settings WHERE key=?", new String[] {key})) {
             return c.moveToFirst() ? c.getString(0) : null;
@@ -419,6 +422,19 @@ final class Record {
         values.put("key", key);
         values.put("value", value);
         db().insertWithOnConflict("settings", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /** Your own numbers, by their last ten digits, as learned from the picture messages you sent. */
+    Set<String> ownNumbers() {
+        return Rules.ownKeys(setting(OWN_NUMBERS));
+    }
+
+    /** Adds newly learned own numbers to those kept. None is ever forgotten, since you may have more than one line. */
+    void addOwnNumbers(Collection<String> learned) {
+        String saved = setting(OWN_NUMBERS);
+        String joined = Rules.joinOwn(saved, learned);
+        if (joined.isEmpty() || joined.equals(saved)) return;
+        setSetting(OWN_NUMBERS, joined);
     }
 
     /** Removes a setting, so it reads as never set. */

@@ -26,7 +26,8 @@ stays hidden until you set one in Options. The page can be shown again from Opti
   never counted.
 - A group message counts if the group includes at least one ticked person, so a mixed group can count personal
   messages. Ignore those in the day view. A chat of you, one ticked person and one other person shows under that
-  person's name.
+  person's name. A group's "+N" counts the people in it who are not ticked, and your own number is left out once the
+  app has seen a picture message you sent.
 - Two messages in one conversation, in the same direction, in the same second count as one.
 - The app reads when a call or text happened, who it was with, its direction and a call's length. It never reads what a
   text says.

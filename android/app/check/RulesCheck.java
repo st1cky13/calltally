@@ -35,6 +35,7 @@ public class RulesCheck {
         payPeriods();
         words();
         filing();
+        own();
         moved();
         search();
         phoneCheck();
@@ -57,6 +58,58 @@ public class RulesCheck {
         System.out.println("passthrough-added " + Passthrough.added(0) + " | " + Passthrough.added(1) + " | " + Passthrough.added(5));
         System.out.println("passthrough-result " + Passthrough.readResult(0, 0) + " | " + Passthrough.readResult(12, 3));
         System.out.println("passthrough-last " + Passthrough.lastCaughtUp(0, Locale.US) + " | " + Passthrough.lastCaughtUp(1793000000000L, Locale.US));
+    }
+
+    /**
+     * Your own number: learned from the sender row of picture messages you sent, never from one you received, a
+     * placeholder or an email, then left out of a conversation's people unless it is a ticked person's. Prints what was
+     * learned, which messages were asked for their rows, and each classification as contact | number.
+     */
+    private static void own() {
+        final Map<Long, List<Rules.AddressRow>> rows = new HashMap<>();
+        rows.put(1L, Arrays.asList(new Rules.AddressRow("+1 (555) 000-9999", 137), new Rules.AddressRow("5551234567", 151),
+            new Rules.AddressRow("5559998888", 151)));
+        rows.put(2L, Arrays.asList(new Rules.AddressRow("5551234567", 137), new Rules.AddressRow("5550009999", 151)));
+        rows.put(3L, Arrays.asList(new Rules.AddressRow("insert-address-token", 137), new Rules.AddressRow("5551234567", 151)));
+        rows.put(4L, Arrays.asList(new Rules.AddressRow("me@example.com", 137), new Rules.AddressRow("5551234567", 151)));
+        final List<Long> asked = new ArrayList<>();
+        Rules.AddressRows addresses = new Rules.AddressRows() {
+            @Override
+            public List<Rules.AddressRow> on(long messageId) {
+                asked.add(messageId);
+                List<Rules.AddressRow> on = rows.get(messageId);
+                return on == null ? new ArrayList<Rules.AddressRow>() : on;
+            }
+        };
+        List<long[]> sentOnly = Arrays.asList(new long[] {1, Rules.BOX_SENT});
+        List<long[]> receivedOnly = Arrays.asList(new long[] {2, Rules.BOX_RECEIVED});
+        List<long[]> token = Arrays.asList(new long[] {3, Rules.BOX_SENT});
+        List<long[]> email = Arrays.asList(new long[] {4, Rules.BOX_SENT});
+        System.out.println("own-learn " + Rules.ownNumbers(sentOnly, addresses) + " " + Rules.ownNumbers(receivedOnly, addresses) + " "
+            + Rules.ownNumbers(token, addresses) + " " + Rules.ownNumbers(email, addresses));
+        asked.clear();
+        // Twenty-five sent messages with no number among them: only the newest twenty are asked.
+        List<long[]> many = new ArrayList<>();
+        many.add(new long[] {2, Rules.BOX_RECEIVED});
+        for (long id = 100; id < 125; id++) many.add(new long[] {id, Rules.BOX_SENT});
+        Rules.ownNumbers(many, addresses);
+        System.out.println("own-asked " + asked.size() + " " + asked.get(0) + " " + asked.get(asked.size() - 1));
+        System.out.println("own-keep " + Rules.joinOwn(null, Arrays.asList("+1 (555) 000-9999")) + " | "
+            + Rules.joinOwn("5550009999", Arrays.asList("2065550199", "5550009999")) + " | " + Rules.joinOwn("5550009999", new ArrayList<String>())
+            + " | " + Rules.ownKeys("  ") + " " + Rules.ownKeys(null) + " " + Rules.ownKeys("5550009999 2065550199"));
+
+        Map<String, String> work = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567")));
+        java.util.Set<String> mine = new HashSet<>(Arrays.asList("5550009999"));
+        show("own-chat", Rules.classify(40, Arrays.asList("5551234567", "5559998888", "+15550009999"), work, null, mine));
+        show("own-pair", Rules.classify(41, Arrays.asList("5551234567", "555-000-9999"), work, null, mine));
+        show("own-group", Rules.classify(42, Arrays.asList("5551234567", "5559998888", "5557776666", "5550009999"), work, null, mine));
+        show("own-without", Rules.classify(42, Arrays.asList("5551234567", "5559998888", "5557776666", "5550009999"), work));
+        Map<String, String> self = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567"),
+            person("s", "Me", true, true, "5550009999")));
+        show("own-ticked", Rules.classify(43, Arrays.asList("5551234567", "5559998888", "5550009999"), self, null, mine));
+        Rules.Texts texts = new Rules.Texts(work, Collections.singletonMap(44L, Arrays.asList("5551234567", "5559998888", "5557776666",
+            "5550009999")), new HashMap<Long, Rules.Who>(), mine);
+        System.out.println("own-texts " + entryText(texts.mms(44, 1793000000L, Rules.BOX_SENT, 128)));
     }
 
     /**
@@ -522,6 +575,8 @@ public class RulesCheck {
         System.out.println("phone-when " + PhoneCheck.when(millis, zone) + " | " + PhoneCheck.when(1793043000000L, zone));
         System.out.println("phone-top " + PhoneCheck.topLine("15", null, "com.google.android.apps.messaging"));
         System.out.println("phone-counts " + PhoneCheck.countsLine(12, 1, -1) + " | " + PhoneCheck.listLine(false));
+        System.out.println("phone-own " + PhoneCheck.ownLine(new ArrayList<String>()) + " | "
+            + PhoneCheck.ownLine(Arrays.asList("5550009999", "2065550199")));
         System.out.println("phone-chat " + PhoneCheck.chatRow(1003, Arrays.asList("+15551234567", "5559998888", "5557776666"), null,
             PhoneCheck.ids("3 4 5", canonical), PhoneCheck.leftOut("3 4 5", canonical), 1, millis, "Group: Dana-Work +2", counting, unticked, zone));
         System.out.println("phone-unknown " + PhoneCheck.chatRow(1004, null, Collections.<String>emptyList(), null, false, 0, 0, null,

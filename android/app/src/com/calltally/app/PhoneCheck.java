@@ -4,8 +4,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * The words of the Phone check screen, one line per row. Plain Java with no Android parts, so the tests can check them.
@@ -66,6 +68,11 @@ final class PhoneCheck {
 
     static String listLine(boolean readable) {
         return "Conversation list: " + (readable ? "readable" : "not readable");
+    }
+
+    /** Your own numbers as the app learned them from picture messages you sent, left out of every group's count. */
+    static String ownLine(Collection<String> own) {
+        return "Your numbers: " + (own == null || own.isEmpty() ? "none learned yet" : String.join(", ", new TreeSet<>(own)));
     }
 
     /**

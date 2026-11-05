@@ -36,6 +36,11 @@ final class Rules {
     private static final Set<Integer> NOT_MESSAGES = new HashSet<>(Arrays.asList(130, 134, 135, 136));
     // Without the conversation list, this many of a conversation's latest messages name its people.
     static final int FALLBACK_MESSAGES = 5;
+    // Android's address type for the sender of a picture message (PduHeaders.FROM).
+    static final int ADDR_FROM = 137;
+    // Your own numbers are learned from at most this many of your newest sent picture messages, or until this many are found.
+    static final int OWN_MESSAGES = 20;
+    static final int OWN_NUMBERS = 3;
 
     // Why a row was left out.
     static final String SKIP_PERSONAL = "personal";
@@ -268,6 +273,63 @@ final class Rules {
         return address != null && !address.isEmpty() && !address.equals("insert-address-token");
     }
 
+    /** One address row of a picture message: the address and its type, such as ADDR_FROM. */
+    static final class AddressRow {
+        final String address;
+        final int type;
+        AddressRow(String address, int type) {
+            this.address = address;
+            this.type = type;
+        }
+    }
+
+    /** The address rows of one picture message, as the phone hands them over. */
+    interface AddressRows {
+        List<AddressRow> on(long messageId);
+    }
+
+    /**
+     * Your own numbers, by their last ten digits, from the picture messages you sent. messages holds message id and box
+     * pairs, newest first. On a sent message the sender row is you. Only sent messages are asked for their rows, and
+     * reading stops after OWN_MESSAGES of them or OWN_NUMBERS numbers, since every sent message names the same sender.
+     */
+    static Set<String> ownNumbers(List<long[]> messages, AddressRows rows) {
+        Set<String> own = new TreeSet<>();
+        int asked = 0;
+        for (long[] message : messages) {
+            if (message[1] != BOX_SENT) continue;
+            if (asked >= OWN_MESSAGES || own.size() >= OWN_NUMBERS) break;
+            asked++;
+            List<AddressRow> on = rows.on(message[0]);
+            if (on == null) continue;
+            for (AddressRow row : on) {
+                if (row.type == ADDR_FROM && usableAddress(row.address) && phoneAddress(row.address)) own.add(numberKey(row.address));
+            }
+        }
+        return own;
+    }
+
+    /** Your own numbers as the record keeps them: last ten digits, space-separated. Empty or null holds none. */
+    static Set<String> ownKeys(String saved) {
+        Set<String> own = new TreeSet<>();
+        if (saved == null) return own;
+        for (String key : saved.trim().split("\\s+")) {
+            String digits = numberKey(key);
+            if (!digits.isEmpty()) own.add(digits);
+        }
+        return own;
+    }
+
+    /** What the record keeps after learning more: every number it had, never fewer, and the new ones. */
+    static String joinOwn(String saved, Collection<String> learned) {
+        Set<String> own = ownKeys(saved);
+        for (String key : learned) {
+            String digits = numberKey(key);
+            if (!digits.isEmpty()) own.add(digits);
+        }
+        return String.join(" ", own);
+    }
+
     /**
      * The decisions for one run's texts. Each conversation is classified once and remembered, so a group keeps one name
      * for the whole run and groups() can count them.
@@ -278,6 +340,7 @@ final class Rules {
         private final Map<Long, Who> threadWho = new HashMap<>();
         private final Map<Long, Who> remembered;
         private final Map<Long, Who> decided = new HashMap<>();
+        private final Set<String> own;
 
         Texts(Map<String, String> workNames, Map<Long, List<String>> threadPeople) {
             this(workNames, threadPeople, new HashMap<Long, Who>());
@@ -285,9 +348,15 @@ final class Rules {
 
         /** remembered: how earlier runs filed each conversation of more than one person, by thread id. */
         Texts(Map<String, String> workNames, Map<Long, List<String>> threadPeople, Map<Long, Who> remembered) {
+            this(workNames, threadPeople, remembered, new HashSet<String>());
+        }
+
+        /** own: your own numbers by their last ten digits, left out of every conversation's people. */
+        Texts(Map<String, String> workNames, Map<Long, List<String>> threadPeople, Map<Long, Who> remembered, Set<String> own) {
             this.workNames = workNames;
             this.threadPeople = threadPeople;
             this.remembered = remembered;
+            this.own = own;
         }
 
         /** Conversations filed for the first time in this run, for the record to remember. */
@@ -326,7 +395,7 @@ final class Rules {
 
         private Who whoInThread(long thread, List<String> people) {
             if (!threadWho.containsKey(thread)) {
-                Who who = classify(thread, people, workNames, remembered.get(thread));
+                Who who = classify(thread, people, workNames, remembered.get(thread), own);
                 threadWho.put(thread, who);
                 if (who != null && !remembered.containsKey(thread)) decided.put(thread, who);
             }
@@ -386,6 +455,14 @@ final class Rules {
      * its texts a second identity and count them twice. A conversation with no ticked person still counts nothing.
      */
     static Who classify(long thread, List<String> addresses, Map<String, String> workNames, Who filed) {
+        return classify(thread, addresses, workNames, filed, new HashSet<String>());
+    }
+
+    /**
+     * The same, leaving out your own numbers (own, by their last ten digits), so they never count as one more person in a
+     * group. A number that is also a ticked person's still counts as that person.
+     */
+    static Who classify(long thread, List<String> addresses, Map<String, String> workNames, Who filed, Set<String> own) {
         Set<String> seen = new LinkedHashSet<>();
         List<String> work = new ArrayList<>();
         String workNumber = null;
@@ -394,6 +471,7 @@ final class Rules {
             String key = numberKey(address);
             if (key.isEmpty() || !seen.add(key)) continue;
             String name = workNames.get(key);
+            if (name == null && own.contains(key)) continue;
             if (name == null) {
                 others++;
             } else {

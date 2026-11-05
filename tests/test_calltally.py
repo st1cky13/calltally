@@ -136,6 +136,24 @@ class AndroidRulesTests(RecordCase):
         self.assertEqual(rules["filing-group"], "Group: Dana-Work, Mom | thread-8 ; Group: Dana-Work +1 | thread-8")
         self.assertEqual(rules["filing-decided"], "1 0")
 
+    def test_own_number_is_learned_and_left_out(self):
+        """Your own number is learned only from the sender row of a picture message you sent, kept with any learned before,
+        and left out of a conversation's people, unless it is a ticked person's number."""
+        rules = self.run_rules()
+        # A sent message's sender is you; a received message, a placeholder and an email teach nothing.
+        self.assertEqual(rules["own-learn"], "[5550009999] [] [] []")
+        # At most twenty sent messages are asked for their rows, newest first, and no received one.
+        self.assertEqual(rules["own-asked"], "20 100 119")
+        # The record keeps every number it learned, never fewer.
+        self.assertEqual(rules["own-keep"], "5550009999 | 2065550199 5550009999 | 5550009999 | [] [] [2065550199, 5550009999]")
+        self.assertEqual(rules["own-chat"], "Dana-Work | 5551234567")
+        self.assertEqual(rules["own-pair"], "Dana-Work | 5551234567")
+        self.assertEqual(rules["own-group"], "Group: Dana-Work +2 | thread-42")
+        self.assertEqual(rules["own-without"], "Group: Dana-Work +3 | thread-42")
+        self.assertEqual(rules["own-ticked"], "Group: Dana-Work, Me +1 | thread-43")
+        self.assertEqual(rules["own-texts"], "Group: Dana-Work +2 / thread-44 / out")
+        self.assertEqual(rules["phone-own"], "Your numbers: none learned yet | Your numbers: 2065550199, 5550009999")
+
     def test_contact_with_a_new_key_keeps_its_person(self):
         self.assertEqual(self.run_rules()["moved"], "{old-dana=new-dana} {} {}")
 

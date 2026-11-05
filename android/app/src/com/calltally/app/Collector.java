@@ -8,9 +8,11 @@ import android.provider.CallLog;
 import android.provider.ContactsContract.CommonDataKinds.Phone;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Reads the phone's contacts, calls and messages into plain values and hands each row to Rules, which decides what it
@@ -22,6 +24,7 @@ final class Collector {
     private static final Uri THREADS = Uri.parse("content://mms-sms/conversations?simple=true");
     private static final Uri CANONICAL = Uri.parse("content://mms-sms/canonical-addresses");
 
+    private final Context context;
     private final ContentResolver resolver;
     private final Map<String, String> workNames;
     private final Map<Long, Rules.Who> filed;
@@ -37,6 +40,7 @@ final class Collector {
      * runs filed each conversation of more than one person.
      */
     Collector(Context context, Map<String, String> workNames, Map<Long, Rules.Who> filed) {
+        this.context = context.getApplicationContext();
         resolver = context.getContentResolver();
         this.workNames = workNames;
         this.filed = filed;
@@ -81,8 +85,11 @@ final class Collector {
         try {
             List<Rules.Entry> found = new ArrayList<>();
             readThreads();
-            threadPeople.putAll(peopleFromMessages());
-            texts = new Rules.Texts(workNames, threadPeople, filed);
+            List<long[]> pictures = readPictureList();
+            // Your own numbers are learned first, so this run already leaves them out of its groups.
+            Set<String> own = ownNumbers(pictures);
+            threadPeople.putAll(peopleFromMessages(pictures));
+            texts = new Rules.Texts(workNames, threadPeople, filed, own);
             int messages = readSms(found) + readMms(found);
             // A phone that suddenly shows no messages is having a problem. Saying so keeps the screen from looking healthy.
             if (messages == 0) throw new Problem("Android returned no messages.");
@@ -206,12 +213,7 @@ final class Collector {
      * For conversations the list doesn't name, such as RCS chats: their newest messages name their people. Without the
      * list at all, every conversation is read this way.
      */
-    private Map<Long, List<String>> peopleFromMessages() {
-        List<long[]> messages = new ArrayList<>();
-        try (Cursor cursor = resolver.query(MMS, new String[] {"_id", "thread_id"}, null, null, "date DESC")) {
-            if (cursor == null) throw new Problem("Android didn't return your messages.");
-            while (cursor.moveToNext()) messages.add(new long[] {cursor.getLong(0), cursor.getLong(1)});
-        }
+    private Map<Long, List<String>> peopleFromMessages(List<long[]> messages) {
         Map<Long, List<String>> people = new HashMap<>();
         Rules.Addresses addresses = new Rules.Addresses() {
             @Override
@@ -223,6 +225,41 @@ final class Collector {
             people.put(entry.getKey(), Rules.peopleFromMessages(entry.getValue(), addresses));
         }
         return people;
+    }
+
+    /** Every picture message's id, thread id and box, newest first. */
+    private List<long[]> readPictureList() {
+        List<long[]> messages = new ArrayList<>();
+        try (Cursor cursor = resolver.query(MMS, new String[] {"_id", "thread_id", "msg_box"}, null, null, "date DESC")) {
+            if (cursor == null) throw new Problem("Android didn't return your messages.");
+            while (cursor.moveToNext()) messages.add(new long[] {cursor.getLong(0), cursor.getLong(1), cursor.getInt(2)});
+        }
+        return messages;
+    }
+
+    /**
+     * Your own numbers: those the record kept, and any new ones named as the sender of your newest sent picture messages,
+     * which the record then keeps too. When this can't be done the run goes on with what is known.
+     */
+    private Set<String> ownNumbers(List<long[]> pictures) {
+        Set<String> own = new HashSet<>();
+        List<long[]> boxes = new ArrayList<>();
+        for (long[] message : pictures) boxes.add(new long[] {message[0], message[2]});
+        Set<String> learned = Rules.ownNumbers(boxes, new Rules.AddressRows() {
+            @Override
+            public List<Rules.AddressRow> on(long messageId) {
+                return addressRowsOn(messageId);
+            }
+        });
+        own.addAll(learned);
+        try {
+            Record record = Record.get(context);
+            own.addAll(record.ownNumbers());
+            record.addOwnNumbers(learned);
+        } catch (RuntimeException error) {
+            // The record is read and written again when the run's entries are added; a problem shows there.
+        }
+        return own;
     }
 
     private int readMms(List<Rules.Entry> entries) {
@@ -250,6 +287,18 @@ final class Collector {
                 String address = cursor.getString(0);
                 if (Rules.usableAddress(address)) found.add(address);
             }
+        } catch (RuntimeException error) {
+            return found;
+        }
+        return found;
+    }
+
+    /** One picture message's address rows with their types, or none when they can't be read. */
+    private List<Rules.AddressRow> addressRowsOn(long messageId) {
+        List<Rules.AddressRow> found = new ArrayList<>();
+        Uri uri = Uri.parse("content://mms/" + messageId + "/addr");
+        try (Cursor cursor = resolver.query(uri, new String[] {"address", "type"}, null, null, null)) {
+            while (cursor != null && cursor.moveToNext()) found.add(new Rules.AddressRow(cursor.getString(0), cursor.getInt(1)));
         } catch (RuntimeException error) {
             return found;
         }

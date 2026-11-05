@@ -70,14 +70,15 @@ CALLS = [("15551234567", 0, 1, 872), (SAM, 100, 2, 3968), (DANA2, 200, 3, 7), (D
          (MOM, 500, 1, 600), (SAM, 600, 7, 45), (PLUMBING, 700, 2, 180)]
 # address, milliseconds after T, SMS type (1 inbox, 2 sent, 3 draft).
 # An RCS chat as Google Messages keeps it: the conversation list names it by the chat's id, its picture and group rows name
-# the people. OWN is a made-up number for the phone itself, which the rows name and the conversation list leaves out.
+# the people. OWN is a made-up number for the phone itself, which the rows name and the conversation list leaves out. The
+# app learns it from the sender row of the sent message and leaves it out, so Mom is the group's one other person.
 RCS_ID = "d4vtcmrqheztgmjwge4tah3emi2dondfga4dmzdgmi2gizbumfrtoodcmy3gmyrtgfswintgmm======@rcs.google.com"
 OWN = "+12065550199"
 RCS_LABEL = "Group: Dana-Work, Sam - Work +1"
 # seconds after T, box (1 received, 2 sent), m_type, then address and address type (130 cc, 137 from, 151 to).
-RCS_MESSAGES = [(2200, 1, 132, [(DANA1, 130), (SAM, 130), (DANA1, 137), (OWN, 151)]),
-                (2300, 1, 132, [(DANA1, 130), (SAM, 130), (DANA1, 137), (OWN, 151)]),
-                (2400, 2, 128, [(OWN, 137), (DANA1, 151), (SAM, 151)])]
+RCS_MESSAGES = [(2200, 1, 132, [(DANA1, 130), (SAM, 130), (MOM, 130), (DANA1, 137), (OWN, 151)]),
+                (2300, 1, 132, [(DANA1, 130), (SAM, 130), (MOM, 130), (DANA1, 137), (OWN, 151)]),
+                (2400, 2, 128, [(OWN, 137), (DANA1, 151), (SAM, 151), (MOM, 151)])]
 TEXTS = [(DANA1, 1000_000, 1), (DANA1, 1060_000, 2), (MOM, 1100_000, 1), (DANA1, 1200_000, 3),
          (DANA2, 1300_100, 1), (DANA2, 1300_700, 1), (PLUMBING, 1400_000, 1)]
 
@@ -572,7 +573,7 @@ def expected(groups, zone):
     if "pair" in groups:
         # A chat with one work contact and one other person shows under that contact.
         out.append(item("text", DANA1, T + 2100, "in", "Dana-Work"))
-    # The RCS chat, named by its messages: a group of Dana and Sam with the phone's own number as the one other.
+    # The RCS chat, named by its messages: a group of Dana and Sam with Mom as the one other; the phone's own number is left out.
     for offset, box, _, _ in RCS_MESSAGES:
         out.append(item("text", f"thread-{groups['rcs']}", T + offset, "in" if box == 1 else "out", RCS_LABEL))
     return out
@@ -883,6 +884,11 @@ def main():
         check("the RCS chat's three messages count under the group of Dana and Sam, read from their address rows",
               sorted((r["epoch"] - T, r["direction"], r["contact"]) for r in rcs)
               == [(2200, "in", RCS_LABEL), (2300, "in", RCS_LABEL), (2400, "out", RCS_LABEL)], str(rcs))
+        # Its rows name the phone's own number, Dana, Sam and Mom: counting the own number too would make it "+2".
+        named = {reference.number_key(a) for _, _, _, rows_of in RCS_MESSAGES for a, _ in rows_of}
+        check("the RCS group's label leaves the phone's own number out: Mom is its one other person",
+              named == {reference.number_key(n) for n in (OWN, DANA1, SAM, MOM)} and RCS_LABEL.endswith(" +1")
+              and {r["contact"] for r in rcs} == {RCS_LABEL}, f"{named} {sorted({r['contact'] for r in rcs})}")
         print(f"info  address rows read by the app: {run.time_addr(500)}", flush=True)
         status = run.prefs().get("status", "")
         # Scheduling the periodic job can start a second run at once, which finds the same and adds nothing new.
@@ -940,6 +946,11 @@ def main():
         rcs_rows = [t for t in seen if " · picture or group row" in t and f" · chat {groups['rcs']} · " in t]
         check("Phone check shows the RCS chat's rows counting under the group",
               len(rcs_rows) == 3 and all(f"counts under {RCS_LABEL}" in t for t in rcs_rows), str(rcs_rows))
+        own_saved = dict(sqlite3.connect(f"file:{first / DATABASE}?mode=ro", uri=True).execute("SELECT key,value FROM settings").fetchall())
+        own_key = reference.number_key(OWN)
+        check("the record keeps the phone's own number, learned from the sent message, and Phone check shows it",
+              own_saved.get("own_numbers") == own_key and f"Your numbers: {own_key}" in seen,
+              f"{own_saved.get('own_numbers')!r} {[t for t in seen if t.startswith('Your numbers')]}")
         crashes = run.adb("logcat", "-d", "-b", "crash", check=False)
         check("Phone check opened without a crash", APP not in crashes, crashes.strip()[-400:])
         (out / "phone-check.txt").write_text("\n".join(seen) + "\n")

@@ -231,6 +231,7 @@ public class PhoneCheckActivity extends Screen {
         Map<String, String> counting = new HashMap<>();
         Map<String, String> unticked = new HashMap<>();
         Map<Long, Rules.Who> filed = new HashMap<>();
+        Set<String> own = new HashSet<>();
         String recordProblem = null;
         try {
             Record record = Record.get(context);
@@ -244,6 +245,7 @@ public class PhoneCheckActivity extends Screen {
                 }
             }
             filed = record.conversations();
+            own = record.ownNumbers();
         } catch (Record.TooNew error) {
             recordProblem = error.getMessage();
         } catch (RuntimeException error) {
@@ -295,6 +297,7 @@ public class PhoneCheckActivity extends Screen {
         }
         lines.add(row(PhoneCheck.countsLine(chats, texts == null ? -1 : texts.count, pictures == null ? -1 : pictures.count)));
         lines.add(row(PhoneCheck.listLine(readable)));
+        lines.add(row(PhoneCheck.ownLine(own)));
         if (listProblem != null) lines.add(quiet(listProblem));
         if (texts != null && texts.appSorted) lines.add(quiet("Text rows sorted by the app."));
         if (pictures != null && pictures.appSorted) lines.add(quiet("Picture and group rows sorted by the app."));
@@ -319,7 +322,7 @@ public class PhoneCheckActivity extends Screen {
             }
         }
         threadPeople.putAll(fromMessages);
-        Rules.Texts decide = new Rules.Texts(counting, threadPeople, filed);
+        Rules.Texts decide = new Rules.Texts(counting, threadPeople, filed, own);
 
         // Chats, newest first.
         Set<Long> threads = new HashSet<>(recipientIds.keySet());
@@ -354,7 +357,7 @@ public class PhoneCheckActivity extends Screen {
             Rules.Who remembered = filed.get(thread);
             if (remembered != null) filing = remembered.contact;
             else if (named != null && !named.isEmpty()) {
-                Rules.Who who = Rules.classify(thread, named, counting);
+                Rules.Who who = Rules.classify(thread, named, counting, null, own);
                 if (who != null) filing = who.contact;
             }
             String raw = recipientIds.get(thread);
