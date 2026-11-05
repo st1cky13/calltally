@@ -69,7 +69,7 @@ public class PayActivity extends Screen {
         }
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(16), dp(10), dp(16), dp(12));
+        column.setPadding(edge(), dp(10), edge(), dp(12));
         now = text(first ? "Pick the first day of your current pay period, then its last day." : "", 14, first ? txt : muted, false);
         now.setId(R.id.pay_question);
         column.addView(now, wide());
@@ -368,7 +368,12 @@ public class PayActivity extends Screen {
         boolean isMarked = date.equals(firstDay) || date.equals(lastDay);
         if (isMarked) filled(button);
         else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x40000000, (accent & 0x00ffffff) | 0x80000000, 1, 8), 8));
-        else button.setBackground(touchable(null, 8));
+        else if (date.equals(today)) {
+            // Today, when not picked, has its number in the accent's circle, as on the month screen.
+            button.setBackground(touchable(todayCircle(), 8));
+            button.setTextColor(ink);
+            button.setTypeface(medium());
+        } else button.setBackground(touchable(null, 8));
         button.setSelected(isMarked);
         button.setOnClickListener(new View.OnClickListener() {
             @Override

@@ -8,9 +8,12 @@ import android.content.res.Configuration;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.TextPaint;
+import android.text.style.MetricAffectingSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -255,7 +258,7 @@ abstract class Screen extends Activity {
         }
         if (footer != null) root.addView(footer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         header.setPadding(dp(16), dp(8), dp(8), dp(8));
-        if (footer != null) footer.setPadding(dp(16), dp(10), dp(16), dp(10));
+        if (footer != null) footer.setPadding(edge(), dp(10), edge(), dp(10));
         insets();
         setContentView(root);
         // A screen drawn again for a new look gets no insets of its own unless it asks.
@@ -293,7 +296,7 @@ abstract class Screen extends Activity {
 
     /** Keeps the bar's text clear of the status bar and the bottom clear of the navigation bar. */
     private void insets() {
-        final int side = dp(16), top = dp(8), bottom = dp(10);
+        final int side = dp(16), top = dp(8), bottom = dp(10), edge = edge();
         final int bodyLeft = body.getPaddingLeft(), bodyTop = body.getPaddingTop(), bodyRight = body.getPaddingRight(), bodyBottom = body.getPaddingBottom();
         root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
@@ -302,7 +305,7 @@ abstract class Screen extends Activity {
                 int left = insets.getSystemWindowInsetLeft(), right = insets.getSystemWindowInsetRight();
                 header.setPadding(side + left, top + insets.getSystemWindowInsetTop(), side / 2 + right, top);
                 body.setPadding(bodyLeft + left, bodyTop, bodyRight + right, bodyBottom + (footer == null ? insets.getSystemWindowInsetBottom() : 0));
-                if (footer != null) footer.setPadding(side + left, dp(10), side + right, bottom + insets.getSystemWindowInsetBottom());
+                if (footer != null) footer.setPadding(edge + left, dp(10), edge + right, bottom + insets.getSystemWindowInsetBottom());
                 return insets.consumeSystemWindowInsets();
             }
         });
@@ -314,6 +317,11 @@ abstract class Screen extends Activity {
         return Math.round(value * density);
     }
 
+    /** The page's side margin, the same on every screen: 16dp, or 8dp on a narrow phone so the month's days still fit. */
+    int edge() {
+        return dp(getResources().getConfiguration().screenWidthDp < 380 ? 8 : 16);
+    }
+
     TextView text(CharSequence value, float sp, int color, boolean bold) {
         TextView view = new TextView(this);
         view.setText(value);
@@ -321,6 +329,43 @@ abstract class Screen extends Activity {
         view.setTextColor(color);
         if (bold) view.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         return view;
+    }
+
+    /** A small quiet label over or beside what it names, such as the weekdays over the calendar. */
+    TextView caption(String value) {
+        TextView view = text(value, 12, muted, false);
+        view.setTypeface(medium());
+        view.setLetterSpacing(0.04f);
+        return view;
+    }
+
+    /** The same look for a label inside a button's text, such as Month over its totals. */
+    final class CaptionSpan extends MetricAffectingSpan {
+        private final float size = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12, getResources().getDisplayMetrics());
+
+        @Override
+        public void updateMeasureState(TextPaint paint) {
+            paint.setTextSize(size);
+            paint.setTypeface(medium());
+            paint.setLetterSpacing(0.04f);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint paint) {
+            updateMeasureState(paint);
+            paint.setColor(muted);
+        }
+    }
+
+    /** Today on a calendar: a 22dp circle in the accent, centred behind the day's number, which goes in ink. */
+    Drawable todayCircle() {
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(accent);
+        LayerDrawable mark = new LayerDrawable(new Drawable[] {circle});
+        mark.setLayerSize(0, dp(22), dp(22));
+        mark.setLayerGravity(0, Gravity.CENTER);
+        return mark;
     }
 
     /** The page's semi-bold, for titles and times. */

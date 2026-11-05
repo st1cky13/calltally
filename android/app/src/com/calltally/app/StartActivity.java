@@ -73,7 +73,7 @@ public class StartActivity extends Screen {
         asked = saved != null && saved.getBoolean("asked", false);
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(20), dp(16), dp(20), dp(16));
+        column.setPadding(edge(), dp(16), edge(), dp(16));
         TextView welcome = text("Welcome to Call Tally", 24, txt, false);
         welcome.setTypeface(medium());
         welcome.setId(R.id.start_title);

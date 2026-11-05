@@ -49,7 +49,7 @@ public class PhoneCheckActivity extends Screen {
         list.setOrientation(LinearLayout.VERTICAL);
         list.setBackgroundColor(card);
         TextView note = text(PhoneCheck.NOTE, 13, muted, false);
-        note.setPadding(dp(16), dp(10), dp(16), dp(10));
+        note.setPadding(edge(), dp(10), edge(), dp(10));
         list.addView(note, wide());
         list.addView(divider());
         rows = new LinearLayout(this);
@@ -134,10 +134,10 @@ public class PhoneCheckActivity extends Screen {
         TextView view;
         if (line.kind == PhoneCheck.Line.HEADING) {
             view = text(line.text, 14, muted, true);
-            view.setPadding(dp(16), dp(18), dp(16), dp(6));
+            view.setPadding(edge(), dp(18), edge(), dp(6));
         } else {
             view = text(line.text, 13, line.kind == PhoneCheck.Line.NOTE ? muted : txt, false);
-            view.setPadding(dp(16), dp(8), dp(16), dp(8));
+            view.setPadding(edge(), dp(8), edge(), dp(8));
             view.setId(R.id.phone_row);
         }
         view.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));

@@ -45,7 +45,7 @@ public class DayActivity extends Screen {
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.VERTICAL);
         head.setBackgroundColor(card);
-        head.setPadding(dp(16), dp(10), dp(16), dp(10));
+        head.setPadding(edge(), dp(10), edge(), dp(10));
         // The day's call time, large, with the summary line under it saying what it is made of.
         total = text("", 28, txt, false);
         total.setTypeface(medium());
@@ -224,7 +224,7 @@ public class DayActivity extends Screen {
         boolean gone = item.ignoredAt != null;
         LinearLayout row = row();
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(16), dp(8), dp(4), dp(8));
+        row.setPadding(edge(), dp(8), dp(4), dp(8));
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
         TextView who = text(item.contact, 15, txt, false);

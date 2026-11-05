@@ -73,7 +73,7 @@ public class WhoActivity extends Screen {
         gap = dp(16);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(gap, gap / 2, gap, 0);
+        page.setPadding(edge(), gap / 2, edge(), 0);
         note = new TextView(this);
         note.setTextSize(14);
         note.setTextColor(muted);

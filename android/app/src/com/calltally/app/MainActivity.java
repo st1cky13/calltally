@@ -131,10 +131,9 @@ public class MainActivity extends Screen {
 
         // A narrow phone gets tighter edges and gaps, so a day's call time still fits its cell.
         narrow = getResources().getConfiguration().screenWidthDp < 380;
-        int edge = narrow ? GAP : GAP_XL;
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(edge), dp(GAP_L), dp(edge), dp(GAP_L));
+        column.setPadding(edge(), dp(GAP_L), edge(), dp(GAP_L));
         // The damaged-record note stays until OK is tapped, apart from the run's own problems below it.
         damagedBox = new LinearLayout(this);
         damagedBox.setOrientation(LinearLayout.VERTICAL);
@@ -269,11 +268,19 @@ public class MainActivity extends Screen {
             }
         });
 
+        // Each weekday sits over its column with the days' own gaps, starting where a two-digit day's number starts in
+        // its circle's room, so Sun lines up with the numbers below it.
         LinearLayout week = row();
-        for (String name : WEEK) {
-            TextView day = text(name, 11, muted, false);
-            day.setGravity(Gravity.CENTER);
-            week.addView(day, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        float digits = text("00", 11, muted, false).getPaint().measureText("00");
+        int lead = dp(narrow ? 2 : 4) + Math.max(0, Math.round((dp(22) - digits) / 2));
+        for (int c = 0; c < WEEK.length; c++) {
+            TextView day = caption(WEEK[c]);
+            day.setGravity(Gravity.START);
+            day.setSingleLine(true);
+            day.setPadding(lead, 0, 0, 0);
+            LinearLayout.LayoutParams dayParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            if (c > 0) dayParams.leftMargin = dp(narrow ? 2 : 4);
+            week.addView(day, dayParams);
         }
         LinearLayout.LayoutParams weekGap = wide();
         weekGap.topMargin = dp(GAP_L);
@@ -370,7 +377,7 @@ public class MainActivity extends Screen {
 
     private void showRow(Button row, String label, Record.Totals totals) {
         SpannableStringBuilder text = new SpannableStringBuilder(label);
-        text.setSpan(new AbsoluteSizeSpan(12, true), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new CaptionSpan(), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         text.append('\n');
         if (totals == null) {
             text.append("…");
@@ -485,11 +492,14 @@ public class MainActivity extends Screen {
         int count = view.lengthOfMonth();
         int rows = (lead + count + 6) / 7;
         int day = 1 - lead;
+        // A short phone gets lower rows, so the whole month and All time fit without scrolling; a busy day still holds
+        // its three lines in the lower row.
+        int least = getResources().getConfiguration().screenHeightDp < 700 ? 44 : 52;
         for (int r = 0; r < rows; r++) {
             LinearLayout row = row();
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
             if (r > 0) rowParams.topMargin = dp(narrow ? 2 : 4);
-            row.setMinimumHeight(dp(52));
+            row.setMinimumHeight(dp(least));
             for (int c = 0; c < 7; c++, day++) {
                 LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
                 if (c > 0) cellParams.leftMargin = dp(narrow ? 2 : 4);
@@ -512,18 +522,30 @@ public class MainActivity extends Screen {
         LinearLayout cell = new LinearLayout(this);
         cell.setId(R.id.day_cell);
         cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setPadding(dp(narrow ? 2 : 4), dp(3), dp(narrow ? 1 : 3), dp(2));
-        // The call time leads; the day's number and its texts are small and quiet around it.
+        cell.setPadding(dp(narrow ? 2 : 4), 0, dp(narrow ? 1 : 3), dp(1));
+        // The call time leads; the day's number and its texts are small and quiet around it. The number has a 22dp room
+        // at the top, round for today's circle; the lines below sit close, into the font's empty space above the digits
+        // and below them, so a busy day still fits a short row.
         TextView number = text(String.valueOf(date.getDayOfMonth()), 11, muted, false);
+        number.setGravity(Gravity.CENTER);
+        number.setMinWidth(dp(22));
+        number.setMinimumWidth(dp(22));
+        number.setIncludeFontPadding(false);
         FitText time = new FitText(this, narrow ? 14 : 15);
         time.setTextColor(txt);
         time.setTypeface(medium());
+        time.setIncludeFontPadding(false);
         figures(time);
         TextView texts = text("", 11, muted, false);
+        texts.setIncludeFontPadding(false);
         texts.setLineSpacing(0, 0.95f);
-        cell.addView(number, wide());
-        cell.addView(time, wide());
-        cell.addView(texts, wide());
+        cell.addView(number, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(22)));
+        LinearLayout.LayoutParams timeClose = wide();
+        timeClose.topMargin = -dp(3);
+        cell.addView(time, timeClose);
+        LinearLayout.LayoutParams textsClose = wide();
+        textsClose.topMargin = -dp(3);
+        cell.addView(texts, textsClose);
         cell.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -539,14 +561,14 @@ public class MainActivity extends Screen {
         TextView texts = (TextView) cell.getChildAt(2);
         boolean used = data != null && data.calls + data.unanswered + data.texts + data.ignored > 0;
         boolean isToday = date.equals(today);
-        // Only a day with something gets a tile; today keeps its ring. A day still to come has its number paler.
-        int busy = soft();
-        cell.setBackground(isToday ? touchable(shape(used ? busy : 0, accent, 2, CORNER), CORNER)
-            : used ? touchable(shape(busy, 0, 0, CORNER), CORNER) : null);
+        // Only a day with something gets a tile; today has its number in a circle of the accent. A day still to come has
+        // its number paler.
+        cell.setBackground(used ? touchable(shape(soft(), 0, 0, CORNER), CORNER) : null);
         cell.setClickable(used);
         cell.setEnabled(used);
         int faint = (muted & 0x00ffffff) | 0x80000000;
-        number.setTextColor(isToday ? accent : !used && date.isAfter(today) ? faint : muted);
+        number.setBackground(isToday ? todayCircle() : null);
+        number.setTextColor(isToday ? ink : !used && date.isAfter(today) ? faint : muted);
         number.setTypeface(isToday ? medium() : Typeface.DEFAULT);
         StringBuilder words = new StringBuilder(Words.monthName(date.getMonthValue()) + " " + date.getDayOfMonth());
         if (data != null && data.calls > 0) {

@@ -28,7 +28,7 @@ public class ContactsActivity extends Screen {
         page.setBackgroundColor(card);
         line = text("", 14, muted, false);
         line.setId(R.id.day_line);
-        line.setPadding(dp(16), dp(10), dp(16), dp(10));
+        line.setPadding(edge(), dp(10), edge(), dp(10));
         page.addView(line, wide());
         page.addView(divider());
         rows = new LinearLayout(this);
@@ -92,7 +92,7 @@ public class ContactsActivity extends Screen {
             LinearLayout row = row();
             row.setId(R.id.contact_row);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(16), dp(10), dp(16), dp(10));
+            row.setPadding(edge(), dp(10), edge(), dp(10));
             row.setMinimumHeight(dp(48));
             LinearLayout info = new LinearLayout(this);
             info.setOrientation(LinearLayout.VERTICAL);
