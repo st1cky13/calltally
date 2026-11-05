@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -281,6 +281,14 @@ def make_handler(store):
         def send_file(self, relative, content_type):
             self.send_bytes(200, (HERE / relative).read_bytes(), content_type)
 
+        def send_apk(self):
+            # Built separately and copied beside the database, so it stays out of git.
+            path = Path(os.environ.get("CALLTALLY_DATA", HERE / "data")) / "calltally-test.apk"
+            if not path.is_file():
+                self.send_json(404, {"error": "not found"})
+                return
+            self.send_bytes(200, path.read_bytes(), "application/vnd.android.package-archive")
+
         def base_url(self):
             proto = self.headers.get("X-Forwarded-Proto", "http")
             host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
@@ -302,6 +310,8 @@ def make_handler(store):
                     self.send_json(200, store.day(query.get("day", [""])[0]))
                 elif url.path == "/api/health":
                     self.send_json(200, {"ok": True, "version": VERSION})
+                elif url.path == "/phone/calltally-test.apk":
+                    self.send_apk()
                 elif url.path == "/phone/calltally-phone.py":
                     self.send_file("phone/calltally-phone.py", "text/plain; charset=utf-8")
                 elif url.path == "/phone/setup.sh":

@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -220,6 +221,18 @@ class StoreTests(ServerCase):
                 urllib.request.urlopen(self.base + path)
             self.assertEqual(caught.exception.code, 404, path)
             caught.exception.close()
+
+    def test_test_app_download(self):
+        folder = Path(self.temp)
+        with unittest.mock.patch.dict(os.environ, {"CALLTALLY_DATA": str(folder)}):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(self.base + "/phone/calltally-test.apk")
+            self.assertEqual(caught.exception.code, 404)
+            caught.exception.close()
+            (folder / "calltally-test.apk").write_bytes(b"PK-test")
+            with urllib.request.urlopen(self.base + "/phone/calltally-test.apk") as reply:
+                self.assertEqual(reply.headers.get_content_type(), "application/vnd.android.package-archive")
+                self.assertEqual(reply.read(), b"PK-test")
 
     def test_page_and_setup_are_served(self):
         with urllib.request.urlopen(self.base + "/") as reply:
