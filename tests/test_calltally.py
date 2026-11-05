@@ -142,14 +142,18 @@ class AndroidRulesTests(RecordCase):
         rules = self.run_rules()
         # A sent message's sender is you; a received message, a placeholder and an email teach nothing.
         self.assertEqual(rules["own-learn"], "[5550009999] [] [] []")
-        # At most twenty sent messages are asked for their rows, newest first, and no received one.
-        self.assertEqual(rules["own-asked"], "20 100 119")
+        # Sent messages are asked newest first, never a received one, until twenty had a usable sender row; placeholder
+        # rows don't count toward the twenty, and no more than sixty are asked in all.
+        self.assertEqual(rules["own-asked"], "20 100 119 [] | 39 200 238 [] | 60 300 359 []")
         # The record keeps every number it learned, never fewer.
         self.assertEqual(rules["own-keep"], "5550009999 | 2065550199 5550009999 | 5550009999 | [] [] [2065550199, 5550009999]")
         self.assertEqual(rules["own-chat"], "Dana-Work | 5551234567")
         self.assertEqual(rules["own-pair"], "Dana-Work | 5551234567")
         self.assertEqual(rules["own-group"], "Group: Dana-Work +2 | thread-42")
         self.assertEqual(rules["own-without"], "Group: Dana-Work +3 | thread-42")
+        # A conversation filed before keeps its identity; a group's label leaves your number out.
+        self.assertEqual(rules["own-filed-group"], "Group: Dana-Work +1 | thread-45")
+        self.assertEqual(rules["own-filed-chat"], "Dana-Work | 5551234567")
         self.assertEqual(rules["own-ticked"], "Group: Dana-Work, Me +1 | thread-43")
         self.assertEqual(rules["own-texts"], "Group: Dana-Work +2 / thread-44 / out")
         self.assertEqual(rules["phone-own"], "Your numbers: none learned yet | Your numbers: 2065550199, 5550009999")

@@ -87,13 +87,24 @@ public class RulesCheck {
         List<long[]> email = Arrays.asList(new long[] {4, Rules.BOX_SENT});
         System.out.println("own-learn " + Rules.ownNumbers(sentOnly, addresses) + " " + Rules.ownNumbers(receivedOnly, addresses) + " "
             + Rules.ownNumbers(token, addresses) + " " + Rules.ownNumbers(email, addresses));
-        asked.clear();
-        // Twenty-five sent messages with no number among them: only the newest twenty are asked.
-        List<long[]> many = new ArrayList<>();
-        many.add(new long[] {2, Rules.BOX_RECEIVED});
-        for (long id = 100; id < 125; id++) many.add(new long[] {id, Rules.BOX_SENT});
-        Rules.ownNumbers(many, addresses);
-        System.out.println("own-asked " + asked.size() + " " + asked.get(0) + " " + asked.get(asked.size() - 1));
+        // A hundred sent messages, each with a usable sender row (an email, so no number): only the newest twenty are asked.
+        // The same hundred with every other row a placeholder: asked until twenty had a usable row. A hundred with only
+        // placeholders: asked up to sixty in all, learning nothing. A received message is never asked.
+        for (long id = 100; id < 200; id++) rows.put(id, Arrays.asList(new Rules.AddressRow("me@example.com", 137)));
+        for (long id = 200; id < 300; id++) rows.put(id, Arrays.asList(new Rules.AddressRow(id % 2 == 0 ? "me@example.com" : "insert-address-token", 137)));
+        for (long id = 300; id < 400; id++) rows.put(id, Arrays.asList(new Rules.AddressRow("insert-address-token", 137),
+            new Rules.AddressRow("5551234567", 151)));
+        StringBuilder askedLine = new StringBuilder("own-asked");
+        for (long start : new long[] {100, 200, 300}) {
+            asked.clear();
+            List<long[]> many = new ArrayList<>();
+            many.add(new long[] {2, Rules.BOX_RECEIVED});
+            for (long id = start; id < start + 100; id++) many.add(new long[] {id, Rules.BOX_SENT});
+            java.util.Set<String> learned = Rules.ownNumbers(many, addresses);
+            askedLine.append(askedLine.length() > 9 ? " |" : "").append(" ").append(asked.size()).append(" ").append(asked.get(0))
+                .append(" ").append(asked.get(asked.size() - 1)).append(" ").append(learned);
+        }
+        System.out.println(askedLine);
         System.out.println("own-keep " + Rules.joinOwn(null, Arrays.asList("+1 (555) 000-9999")) + " | "
             + Rules.joinOwn("5550009999", Arrays.asList("2065550199", "5550009999")) + " | " + Rules.joinOwn("5550009999", new ArrayList<String>())
             + " | " + Rules.ownKeys("  ") + " " + Rules.ownKeys(null) + " " + Rules.ownKeys("5550009999 2065550199"));
@@ -106,6 +117,11 @@ public class RulesCheck {
         show("own-without", Rules.classify(42, Arrays.asList("5551234567", "5559998888", "5557776666", "5550009999"), work));
         Map<String, String> self = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567"),
             person("s", "Me", true, true, "5550009999")));
+        // Conversations filed before keep their identity: a group stays a group, its label without your number; a chat
+        // stays that chat.
+        show("own-filed-group", Rules.classify(45, Arrays.asList("5551234567", "5559998888", "5550009999"), work,
+            new Rules.Who("Group: Dana-Work +2", "thread-45"), mine));
+        show("own-filed-chat", Rules.classify(46, Arrays.asList("5551234567", "5550009999"), work, new Rules.Who("Dana-Work", "5551234567"), mine));
         show("own-ticked", Rules.classify(43, Arrays.asList("5551234567", "5559998888", "5550009999"), self, null, mine));
         Rules.Texts texts = new Rules.Texts(work, Collections.singletonMap(44L, Arrays.asList("5551234567", "5559998888", "5557776666",
             "5550009999")), new HashMap<Long, Rules.Who>(), mine);

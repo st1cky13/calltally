@@ -239,7 +239,9 @@ final class Collector {
 
     /**
      * Your own numbers: those the record kept, and any new ones named as the sender of your newest sent picture messages,
-     * which the record then keeps too. When this can't be done the run goes on with what is known.
+     * which the record then keeps too. The newest sent messages are asked for their sender row until 20 of them had a
+     * usable one, 60 were asked in all, or 3 numbers were found; received messages are never asked. When this can't be
+     * done the run goes on with what is known.
      */
     private Set<String> ownNumbers(List<long[]> pictures) {
         Set<String> own = new HashSet<>();

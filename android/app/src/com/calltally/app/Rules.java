@@ -38,8 +38,10 @@ final class Rules {
     static final int FALLBACK_MESSAGES = 5;
     // Android's address type for the sender of a picture message (PduHeaders.FROM).
     static final int ADDR_FROM = 137;
-    // Your own numbers are learned from at most this many of your newest sent picture messages, or until this many are found.
+    // Your own numbers are learned from your newest sent picture messages: until this many of them had a usable sender row,
+    // this many were asked in all, or this many numbers were found in this run.
     static final int OWN_MESSAGES = 20;
+    static final int OWN_ASKED = 60;
     static final int OWN_NUMBERS = 3;
 
     // Why a row was left out.
@@ -290,21 +292,28 @@ final class Rules {
 
     /**
      * Your own numbers, by their last ten digits, from the picture messages you sent. messages holds message id and box
-     * pairs, newest first. On a sent message the sender row is you. Only sent messages are asked for their rows, and
-     * reading stops after OWN_MESSAGES of them or OWN_NUMBERS numbers, since every sent message names the same sender.
+     * pairs, newest first. On a sent message the sender row is you. Only sent messages are asked for their rows. Reading
+     * stops after OWN_MESSAGES sent messages with a usable sender row (not a placeholder or empty), after OWN_ASKED sent
+     * messages asked in all, or once this run found OWN_NUMBERS numbers, since every sent message names the same sender.
      */
     static Set<String> ownNumbers(List<long[]> messages, AddressRows rows) {
         Set<String> own = new TreeSet<>();
         int asked = 0;
+        int usable = 0;
         for (long[] message : messages) {
             if (message[1] != BOX_SENT) continue;
-            if (asked >= OWN_MESSAGES || own.size() >= OWN_NUMBERS) break;
+            // own counts this run's finds only, not the numbers the record kept from earlier runs.
+            if (usable >= OWN_MESSAGES || asked >= OWN_ASKED || own.size() >= OWN_NUMBERS) break;
             asked++;
             List<AddressRow> on = rows.on(message[0]);
             if (on == null) continue;
+            boolean sender = false;
             for (AddressRow row : on) {
-                if (row.type == ADDR_FROM && usableAddress(row.address) && phoneAddress(row.address)) own.add(numberKey(row.address));
+                if (row.type != ADDR_FROM || !usableAddress(row.address)) continue;
+                sender = true;
+                if (phoneAddress(row.address)) own.add(numberKey(row.address));
             }
+            if (sender) usable++;
         }
         return own;
     }
