@@ -150,10 +150,13 @@ public class PayActivity extends Screen {
         });
         reset = button("Reset");
         reset.setId(R.id.pay_reset);
+        // Off until the record is read; it stays off when the record can't be read.
+        enable(reset, false);
         reset.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 // Clears the day picked, and turns a saved pay period off on Confirm.
+                if (view == null) return;
                 chosen = null;
                 off = start != null;
                 drawCal();
@@ -324,7 +327,7 @@ public class PayActivity extends Screen {
         final LocalDate marked = off ? null : chosen != null ? chosen : start;
         boolean isMarked = date.equals(marked);
         if (isMarked) filled(button);
-        else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x33000000, line2, 1, 8)));
+        else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x40000000, (accent & 0x00ffffff) | 0x80000000, 1, 8)));
         button.setSelected(isMarked);
         button.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -350,7 +353,7 @@ public class PayActivity extends Screen {
         if (!first) {
             close.setVisibility(changing ? View.GONE : View.VISIBLE);
             revert.setVisibility(changing ? View.VISIBLE : View.GONE);
-            enable(reset, !off && (start != null || chosen != null));
+            enable(reset, view != null && !off && (start != null || chosen != null));
         }
         confirm.setVisibility(changing ? View.VISIBLE : View.GONE);
         enable(confirm, true);
