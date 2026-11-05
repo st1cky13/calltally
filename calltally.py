@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.1.6"
+VERSION = "0.2.0"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -63,6 +63,9 @@ class BadRequest(Exception):
 
 
 def number_key(number):
+    # A group is known by its conversation, which must not match a short phone number with the same digits.
+    if number.startswith("thread-"):
+        return number
     digits = re.sub(r"\D", "", number)
     return digits[-10:] if digits else number.strip().lower()
 
@@ -283,7 +286,7 @@ def make_handler(store):
 
         def send_apk(self):
             # Built separately and copied beside the database, so it stays out of git.
-            path = Path(os.environ.get("CALLTALLY_DATA", HERE / "data")) / "calltally-test.apk"
+            path = Path(os.environ.get("CALLTALLY_DATA", HERE / "data")) / "calltally.apk"
             if not path.is_file():
                 self.send_json(404, {"error": "not found"})
                 return
@@ -310,7 +313,7 @@ def make_handler(store):
                     self.send_json(200, store.day(query.get("day", [""])[0]))
                 elif url.path == "/api/health":
                     self.send_json(200, {"ok": True, "version": VERSION})
-                elif url.path == "/phone/calltally-test.apk":
+                elif url.path == "/phone/calltally.apk":
                     self.send_apk()
                 elif url.path == "/phone/calltally-phone.py":
                     self.send_file("phone/calltally-phone.py", "text/plain; charset=utf-8")

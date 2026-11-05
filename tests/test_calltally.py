@@ -145,6 +145,10 @@ class StoreTests(ServerCase):
         self.assertEqual(len(rows), 1)
         self.assertIsNotNone(rows[0]["deleted_at"])
 
+    def test_group_does_not_match_a_short_number(self):
+        self.post("/api/upload", {"entries": [entry(kind="text", duration_s=0, number="12"), entry(kind="text", duration_s=0, number="thread-12", contact="Group: Dana-Work")]})
+        self.assertEqual(len(self.get("/api/day?day=2026-11-04")["entries"]), 2)
+
     def test_number_formats_are_one_entry(self):
         self.post("/api/upload", {"entries": [entry(number="+1 (555) 123-4567"), entry(number="5551234567")]})
         self.assertEqual(len(self.get("/api/day?day=2026-11-04")["entries"]), 1)
@@ -222,15 +226,15 @@ class StoreTests(ServerCase):
             self.assertEqual(caught.exception.code, 404, path)
             caught.exception.close()
 
-    def test_test_app_download(self):
+    def test_app_download(self):
         folder = Path(self.temp)
         with unittest.mock.patch.dict(os.environ, {"CALLTALLY_DATA": str(folder)}):
             with self.assertRaises(urllib.error.HTTPError) as caught:
-                urllib.request.urlopen(self.base + "/phone/calltally-test.apk")
+                urllib.request.urlopen(self.base + "/phone/calltally.apk")
             self.assertEqual(caught.exception.code, 404)
             caught.exception.close()
-            (folder / "calltally-test.apk").write_bytes(b"PK-test")
-            with urllib.request.urlopen(self.base + "/phone/calltally-test.apk") as reply:
+            (folder / "calltally.apk").write_bytes(b"PK-test")
+            with urllib.request.urlopen(self.base + "/phone/calltally.apk") as reply:
                 self.assertEqual(reply.headers.get_content_type(), "application/vnd.android.package-archive")
                 self.assertEqual(reply.read(), b"PK-test")
 
@@ -240,6 +244,49 @@ class StoreTests(ServerCase):
         request = urllib.request.Request(self.base + "/phone/setup.sh", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "box.test:8444"})
         with urllib.request.urlopen(request) as reply:
             self.assertIn(b'BASE="https://box.test:8444"', reply.read())
+
+
+class AndroidRulesTests(ServerCase):
+    """The Android app's rules, run on a real JVM and sent to a real server."""
+    TOOLS = Path.home() / "local" / "calltally-build" / "jdk" / "bin"
+
+    def run_rules(self):
+        if not (self.TOOLS / "javac").exists():
+            self.skipTest("no JDK")
+        out = Path(self.temp) / "classes"
+        source = ROOT / "android" / "app"
+        subprocess.run([str(self.TOOLS / "javac"), "-nowarn", "-d", str(out), str(source / "src/com/calltally/app/Rules.java"),
+                        str(source / "check/RulesCheck.java")], check=True, capture_output=True)
+        done = subprocess.run([str(self.TOOLS / "java"), "-cp", str(out), "com.calltally.app.RulesCheck"],
+                              check=True, capture_output=True, text=True, env={**os.environ, "TZ": "America/Los_Angeles"})
+        return dict(line.split(" ", 1) for line in done.stdout.splitlines())
+
+    def test_who_counts(self):
+        rules = self.run_rules()
+        self.assertEqual(rules["one"], "Dana-Work | +1 (555) 123-4567")
+        self.assertEqual(rules["personal"], "none")
+        self.assertEqual(rules["mixed"], "Group: Dana-Work +2 | thread-3")
+        self.assertEqual(rules["two-work"], 'Group: Dana-Work, Sam "Q" - Work | thread-4')
+        self.assertEqual(rules["one-extra"], "Dana-Work | 5551234567")
+        self.assertEqual(rules["names"], "truetruefalsefalsefalse")
+        self.assertEqual(rules["acceptable"], "falsefalsefalsetrue")
+        self.assertEqual(rules["seconds"], "1793000000 1793000000 1793000000")
+
+    def test_upload_is_accepted_and_matches_earlier_termux_entries(self):
+        rules = self.run_rules()
+        # The same call as the Termux script would have uploaded, deleted before the app takes over.
+        sent = json.loads(rules["body"])["entries"]
+        self.assertEqual((sent[0]["epoch"], sent[1]["epoch"]), (1793000000, 1793000001))
+        self.post("/api/upload", {"entries": [entry(epoch=sent[0]["epoch"], at=sent[0]["at"])]})
+        day = sent[0]["at"][:10]
+        first = self.get(f"/api/day?day={day}")["entries"][0]["id"]
+        self.post("/api/delete", {"id": first})
+        status, result = self.post("/api/upload", None, raw=rules["body"].encode())
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result, {"received": 2, "added": 1})
+        rows = self.get(f"/api/day?day={day}")["entries"]
+        self.assertIsNotNone(next(r for r in rows if r["id"] == first)["deleted_at"])
+        self.assertTrue(any(r["contact"] == 'Sam "Q" - Work' and r["number"] == "thread-4" for r in rows))
 
 
 class PhoneTests(ServerCase):

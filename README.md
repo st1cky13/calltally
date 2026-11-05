@@ -4,10 +4,10 @@ A private calendar of work calls and texts. It opens on the current month, with 
 month's total call time at the top. Each day shows total call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted
 entries stay deleted and can be restored.
 
-A script on an Android phone (in Termux) finds calls and texts with contacts whose name ends in `-Work` and uploads them
-about every 15 minutes, including history already on the phone (it reads the newest 2,000 calls and newest 5,000 texts
-across all contacts). It uploads the time, contact, number, direction and call
-length. It never uploads what a text said or anything about other contacts.
+An Android app finds calls and texts with contacts whose name ends in `-Work` and uploads them soon after they happen, and
+about every 15 minutes in case one is missed, including history already on the phone. It uploads the time, contact, number,
+direction and call length. It never reads what a text said or uploads anything about other contacts, except that a group
+with a work contact shows how many other people are in it.
 
 ## Server
 
@@ -16,26 +16,27 @@ network such as Tailscale and never give it a public address.
 
 ## Phone
 
-1. Install Tailscale, Termux and Termux:API. Get Termux and Termux:API from the same place (F-Droid or GitHub), not Google Play.
-2. In Termux, run `curl -fsSL https://YOUR-SERVER/phone/setup.sh | sh` and allow each permission Android asks for.
-3. If Android blocks the call log or SMS permission, open App info for Termux:API, choose the three-dot menu, and pick
-   "Allow restricted settings". Then run the command again.
-4. Set battery use for Termux and Termux:API to unrestricted, and turn off "remove permissions if app is unused" for
-   Termux:API.
+Build with `CALLTALLY_SERVER=https://YOUR-SERVER sh android/app/build.sh` (see that file for the tools it needs), put the
+result in the server's data folder as `calltally.apk`, and download it on the phone from `/phone/calltally.apk`.
 
-The page's "Updated" label turns yellow if the phone hasn't uploaded for three hours. Errors are in `~/.calltally/last.log`.
+1. Install Tailscale and the app, open it and allow what it asks for. If Android blocks a permission, open App info for
+   Call Tally Sync, choose the three-dot menu, and pick "Allow restricted settings".
+2. Set its battery use to unrestricted, and turn off "remove permissions if app is unused".
 
-## What it can't see
+The page's "Updated" label turns yellow if the phone hasn't uploaded for three hours. The app's screen shows the last result.
 
-- Calling and messaging apps such as WhatsApp and Signal.
-- Picture messages, group messages and RCS chats, which aren't in the list of texts it reads.
-- A work contact's extra numbers. Termux lists one number per contact. An extra number is still found from the name on
-  its calls or received texts, but a text you send to one may be missed. Saving it as its own `-Work` contact fixes that.
-- Calls the phone has already dropped from its log. Android keeps a limited number.
-- Two texts with one contact, in the same direction, in the same second count as one.
-- Removing `-Work` isn't always enough. A deleted contact's old calls can still upload, and so can old calls from a renamed
-  contact's extra number, because the call log keeps the old name. Delete those entries on the page. Stopping them for
-  good means clearing those calls from the phone's call log.
+Termux and `phone/calltally-phone.py` are the older way to upload. Entries match, so moving between them adds no copies.
+
+## What counts
+
+- A message in a group counts if the group includes at least one `-Work` contact, so a mixed group can count personal
+  messages. Delete those on the page. A chat of you, one `-Work` contact and one other person shows under that contact's name.
+- Only calls that connected count toward time and the call count.
+- It reads Android's shared SMS and MMS tables. A messaging app that keeps messages only in its own storage can't be seen.
+- Apps such as WhatsApp and Signal aren't included.
+- Calls the phone has already dropped from its log can't be recovered.
+- Two messages in one conversation, in the same direction, in the same second count as one.
+- A group is known by its conversation on the phone. After moving to a new phone or restoring messages, its history may upload again as a new group.
 
 ## Tests
 
