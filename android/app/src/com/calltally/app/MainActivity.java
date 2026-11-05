@@ -186,13 +186,14 @@ public class MainActivity extends Screen {
         title.setPadding(dp(6), 0, dp(6), 0);
         title.setMinHeight(dp(48));
         title.setBackground(touchable(shape(0, 0, 0, 8)));
-        title.setContentDescription("Pick a month");
-        // An empty space as wide as >> keeps the month's name in the middle of the screen.
-        nav.addView(new View(this), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        // An empty space as wide as >> and its gap keeps the month's name in the middle of the screen.
+        nav.addView(new View(this), new LinearLayout.LayoutParams(dp(54), dp(48)));
         nav.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(48)));
         nav.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         nav.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        nav.addView(now, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout.LayoutParams nowSize = new LinearLayout.LayoutParams(dp(48), dp(48));
+        nowSize.leftMargin = dp(6);
+        nav.addView(now, nowSize);
         monthCard.addView(nav, wide());
         prev.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -472,7 +473,9 @@ public class MainActivity extends Screen {
 
     /** Lays out the month's days, empty until the record answers. */
     private void drawMonth() {
-        title.show(Words.monthTitle(view.getYear(), view.getMonthValue()));
+        String shown = Words.monthTitle(view.getYear(), view.getMonthValue());
+        title.show(shown);
+        title.setContentDescription(shown + ". Pick a month");
         grid.removeAllViews();
         cells.clear();
         int lead = view.atDay(1).getDayOfWeek().getValue() % 7;
@@ -566,7 +569,9 @@ public class MainActivity extends Screen {
         enable(prev, earliest != null && before.atEndOfMonth().toString().compareTo(earliest) >= 0);
         enable(next, view.isBefore(thisMonth));
         enable(now, !view.equals(thisMonth));
-        enable(title, earliest != null);
+        // The month's name always looks the same; with no entries yet there is nothing to pick, so a tap does nothing.
+        title.setEnabled(earliest != null);
+        title.setClickable(earliest != null);
         if (period == null) {
             enable(periodPrev, false);
             enable(periodNext, false);
@@ -631,7 +636,6 @@ public class MainActivity extends Screen {
                 Button button = button(name.substring(0, 3));
                 button.setId(R.id.month_pick);
                 button.setContentDescription(name);
-                button.setMinHeight(dp(44));
                 button.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -663,9 +667,14 @@ public class MainActivity extends Screen {
         closeGap.topMargin = dp(14);
         box.addView(close, closeGap);
 
+        // On a short screen, such as a phone on its side, the picker scrolls so Close is always reachable.
+        ScrollView boxScroll = new ScrollView(this);
+        boxScroll.setFillViewport(true);
+        boxScroll.addView(box, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         picker = new Dialog(this);
         picker.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        picker.setContentView(box);
+        picker.setContentView(boxScroll);
         picker.setCanceledOnTouchOutside(true);
         picker.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
             @Override

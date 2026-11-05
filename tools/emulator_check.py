@@ -1277,6 +1277,9 @@ def main():
             check("picking the seeded month shows it", text_of(nodes, "month_title") == seeded_title and not by_id(nodes, "pick_year"),
                   str(text_of(nodes, "month_title")))
             nodes = back_to_seeded(nodes)
+        else:
+            print("info  skipped: the emulator's date is in the seeded month, so the >> and month picker checks need "
+                  "another month to start from")
         following = (datetime.strptime(seeded, "%Y-%m").replace(day=28) + timedelta(days=4)).replace(day=1)
         seeded_totals = store.totals(f"{seeded}-01", (following - timedelta(days=1)).strftime("%Y-%m-%d"))
         nodes = run.wait_for(lambda ns: (text_of(ns, "total_month") or "").endswith(row_value(seeded_totals)), 20)
