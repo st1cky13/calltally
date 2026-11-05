@@ -269,8 +269,10 @@ public class PayActivity extends Screen {
                         else now.setText(period.describe(today) + ". Pick the first day to change it.");
                         noChange();
                         if (start == null || chosen != null) off = false;
-                        view = keptView != null ? keptView : YearMonth.from(start != null ? start : today);
-                        if (view.isAfter(thisMonth.plusMonths(1))) view = thisMonth.plusMonths(1);
+                        // Opens on the day picked, else the first day of the current period, else this month.
+                        LocalDate opening = chosen != null ? chosen : shownFirst();
+                        view = keptView != null ? keptView : YearMonth.from(opening != null ? opening : today);
+                        if (view.isAfter(latestMonth())) view = latestMonth();
                         drawCal();
                         drawReview();
                     }
@@ -284,23 +286,28 @@ public class PayActivity extends Screen {
         return start == null ? null : new PayPeriod(start, Integer.parseInt(days));
     }
 
-    /** The highlighted first day: the one picked, else the saved start; none when turned off or unset. */
+    /** The highlighted first day: the one picked, else the first day of the current period; none when off or unset. */
     private LocalDate shownFirst() {
-        return off ? null : chosen != null ? chosen : start;
+        if (off) return null;
+        if (chosen != null) return chosen;
+        PayPeriod period = saved();
+        return period == null ? null : period.first(period.index(today));
     }
 
-    /** The highlighted last day: the one picked, else the saved period's first last day; none until it is picked. */
+    /** The highlighted last day: the one picked, else the last day of the current period; none until it is picked. */
     private LocalDate shownLast() {
         if (off) return null;
         if (chosen != null) return chosenLast;
         PayPeriod period = saved();
-        return period == null ? null : period.last(0);
+        return period == null ? null : period.last(period.index(today));
     }
 
-    /** Picking the saved first and last day again is no change. */
+    /** Picking the current period's first and last day again is no change. */
     private void noChange() {
         PayPeriod period = saved();
-        if (chosen != null && period != null && chosen.equals(start) && period.last(0).equals(chosenLast)) {
+        if (chosen == null || period == null) return;
+        long k = period.index(today);
+        if (chosen.equals(period.first(k)) && period.last(k).equals(chosenLast)) {
             chosen = null;
             chosenLast = null;
         }
@@ -337,10 +344,14 @@ public class PayActivity extends Screen {
         LocalDate first = start == null || start.isAfter(today.minusMonths(1)) ? today.minusMonths(1) : start;
         if (earliest != null && LocalDate.parse(earliest).isBefore(first)) first = LocalDate.parse(earliest);
         enable(calPrev, view.isAfter(YearMonth.from(first)));
-        // Forward to next month at least, and to the month after the first day, so its last day can be picked.
+        enable(calNext, view.isBefore(latestMonth()));
+    }
+
+    /** The last month the arrows reach: next month at least, and two months past a first day picked, for its last day. */
+    private YearMonth latestMonth() {
         YearMonth latest = thisMonth.plusMonths(1);
-        if (shadeFrom != null && YearMonth.from(shadeFrom).plusMonths(1).isAfter(latest)) latest = YearMonth.from(shadeFrom).plusMonths(1);
-        enable(calNext, view.isBefore(latest));
+        if (!off && chosen != null && YearMonth.from(chosen).plusMonths(2).isAfter(latest)) latest = YearMonth.from(chosen).plusMonths(2);
+        return latest;
     }
 
     private Button dayButton(final LocalDate date, boolean shaded) {
@@ -359,13 +370,18 @@ public class PayActivity extends Screen {
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (firstDay == null || date.isBefore(firstDay)) {
+                if (chosen == null && (date.equals(firstDay) || date.equals(lastDay))) {
+                    // Either day of the saved period shown unpicks it, as Reset does: it is turned off on Confirm.
+                    chosen = null;
+                    chosenLast = null;
+                    off = true;
+                } else if (chosen == null || date.isBefore(firstDay)) {
                     // A new first day; its last day is picked next.
                     chosen = date;
                     chosenLast = null;
                     off = false;
                 } else if (date.equals(firstDay)) {
-                    // The first day unpicks both, as Reset does: a saved pay period is turned off on Confirm.
+                    // The first day picked unpicks both, as Reset does: a saved pay period is turned off on Confirm.
                     chosen = null;
                     chosenLast = null;
                     off = start != null;
@@ -406,12 +422,12 @@ public class PayActivity extends Screen {
         } else if (ready) {
             // "Pay period: Oct 25 – Nov 7 → Nov 28 – Dec 11, 14 days"
             line.append("Pay period: ");
-            bold(line, saved == null ? "none" : saved.dates(0, today));
+            bold(line, saved == null ? "none" : saved.current(today));
             line.append(" → ");
             bold(line, off ? "none" : picked().span(today));
         } else if (saved != null) {
             line.append("Pay period ");
-            bold(line, saved.span(today));
+            bold(line, saved.current(today) + ", " + Words.plural(saved.days, "day"));
         }
         preview.setText(line);
         if (!ready) return;

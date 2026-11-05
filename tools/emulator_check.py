@@ -404,10 +404,11 @@ def row_value(totals):
     return f"{full_time(totals['call_s'])} · {plural(totals['calls'], 'call')} · {plural(totals['texts'], 'text')}"
 
 
-def two_weeks(start, today):
-    """The two weeks from start, as PayPeriod.dates writes them: "Oct 25 – Nov 7", with years when not all this year."""
+def two_weeks(start, today, days=14):
+    """The days from start, two weeks unless told, as PayPeriod.dates writes them: "Oct 25 – Nov 7", with years when not
+    all this year."""
     first = start
-    last = first + timedelta(days=13)
+    last = first + timedelta(days=days - 1)
     show = first.year != today.year or last.year != today.year
 
     def short(day, year):
@@ -696,60 +697,87 @@ def main():
         nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_change")), 30)
         run.tap(by_id(nodes, "pay_change")[0])
         today = datetime.now(ZoneInfo(zone)).date()
-        saved_two = two_weeks(date(2026, 10, 25), today)
+        # The hook saved Oct 25; the screen shows the period holding today, which moves with the host's date.
+        saved_day = date(2026, 10, 25)
+        cur_first = saved_day + timedelta(days=(today - saved_day).days // 14 * 14)
+        cur_last = cur_first + timedelta(days=13)
+        saved_two = two_weeks(cur_first, today)
         set_preview = f"Pay period {saved_two}, 14 days"
         nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == set_preview, 20)
         run.shot("07-pay-periods-from-options")
         reset_node = by_id(nodes, "pay_reset")
-        saved_day, saved_last, before, later = date(2026, 10, 25), date(2026, 11, 7), date(2026, 10, 24), date(2026, 10, 30)
-        shade = shaded_days(nodes, run.shots / "07-pay-periods-from-options.png")
-        check("Pay periods from Options says the start, shows the saved period, and has Close and Reset",
+        check("Pay periods from Options says the start, shows the current period, and has Close and Reset",
               text_of(nodes, "pay_question") == "Pay periods start Sun Oct 25 and run two weeks. Pick the first day to change it."
               and text_of(nodes, "period_preview") == set_preview and bool(by_id(nodes, "close")) and not by_id(nodes, "confirm")
               and bool(reset_node) and reset_node[0].get("enabled") == "true" and not by_id(nodes, "review"),
               f"{text_of(nodes, 'pay_question')!r} {text_of(nodes, 'period_preview')!r} want {set_preview!r}")
-        # The saved first and last day are highlighted and the days between shaded, across the two months. A day before
-        # the first day starts a new pick; a later day is its last day; the last day again clears it; the first day again
-        # turns the pay period off, as Reset does; picking the saved two days again is no change.
+        # The current period's first and last day are highlighted and the days between shaded, across months. With
+        # nothing pending any other day, even one after the period, starts a new pick; a later day is its last day; the
+        # last day again clears it; the first day again turns the pay period off, as Reset does; picking the current
+        # period's two days again is no change.
         def cal_days(ns):
             return [(datetime.strptime(n.get("content-desc"), "%A, %B %d, %Y").date(), n) for n in by_id(ns, "cal_day")]
 
         def marked(ns):
             return [str(day) for day, n in cal_days(ns) if n.get("selected") == "true"]
 
-        def page(ns, button, day):
-            run.tap(by_id(ns, button)[0])
-            return run.wait_for(lambda n2: any(d == day for d, n in cal_days(n2)), 15)
-        october = marked(nodes)
-        nodes = page(nodes, "cal_next", saved_last)
-        run.shot("07a-pay-periods-from-options-next-month")
-        november, shade_next = marked(nodes), shaded_days(nodes, run.shots / "07a-pay-periods-from-options-next-month.png")
-        nodes = page(nodes, "cal_prev", saved_day)
-        check("the saved first day and last day are highlighted and the days between shaded, into the next month",
-              october == [str(saved_day)] and november == [str(saved_last)]
-              and shade == shade_wanted(saved_day, saved_last, saved_day) and shade_next == shade_wanted(saved_day, saved_last, saved_last),
-              f"highlighted {october} then {november} shaded {shade} then {shade_next}")
-        run.tap([n for day, n in cal_days(nodes) if day == before][0])
+        def month_of(ns):
+            days = cal_days(ns)
+            return (days[0][0].year, days[0][0].month) if days else None
+
+        def visit(ns, day):
+            """Pages the calendar to the month holding day."""
+            for _ in range(6):
+                shown = month_of(ns)
+                if shown == (day.year, day.month):
+                    return ns
+                button = "cal_next" if shown < (day.year, day.month) else "cal_prev"
+                run.tap(by_id(ns, button)[0])
+                ns = run.wait_for(lambda n2, was=shown: month_of(n2) not in (None, was), 15)
+            return ns
+
+        def tap_day(ns, day):
+            ns = visit(ns, day)
+            run.tap([n for d, n in cal_days(ns) if d == day][0])
+        opened = month_of(nodes)
+        seen_marked, seen_shade, step = [], [], cur_first.replace(day=1)
+        while step <= cur_last:
+            nodes = visit(nodes, step)
+            name = f"07a-pay-periods-from-options-{step.strftime('%Y-%m')}"
+            run.shot(name)
+            seen_marked += marked(nodes)
+            seen_shade += shaded_days(nodes, run.shots / f"{name}.png")
+            step = (step + timedelta(days=32)).replace(day=1)
+        check("the calendar opens on the current period, its first and last day highlighted and the days between shaded",
+              opened == (cur_first.year, cur_first.month) and seen_marked == [str(cur_first), str(cur_last)]
+              and sorted(seen_shade) == sorted(str(cur_first + timedelta(days=i)) for i in range(1, 13)),
+              f"opened {opened} highlighted {seen_marked} shaded {sorted(seen_shade)}")
+        new_first, new_last = cur_last + timedelta(days=3), cur_last + timedelta(days=9)
+        tap_day(nodes, new_first)
         nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
-        run.shot("07b-pay-periods-day-before")
-        step1 = (marked(nodes), shaded_days(nodes, run.shots / "07b-pay-periods-day-before.png"), bool(by_id(nodes, "review")),
+        run.shot("07b-pay-periods-new-first-day")
+        step1 = (marked(nodes), shaded_days(nodes, run.shots / "07b-pay-periods-new-first-day.png"), bool(by_id(nodes, "review")),
                  bool(by_id(nodes, "confirm")), bool(by_id(nodes, "revert")))
-        run.tap([n for day, n in cal_days(nodes) if day == later][0])
-        nodes = run.wait_for(lambda ns: text_of(ns, "review") == "Pay periods start: Sun Oct 25 → Sat Oct 24", 15)
-        run.tap([n for day, n in cal_days(nodes) if day == later][0])
+        want_review = f"Pay periods start: Sun Oct 25 → {new_first.strftime('%a %b')} {new_first.day}"
+        tap_day(nodes, new_last)
+        nodes = run.wait_for(lambda ns: text_of(ns, "review") == want_review, 15)
+        tap_day(nodes, new_last)
         nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
         step3 = (marked(nodes), bool(by_id(nodes, "review")))
-        run.tap([n for day, n in cal_days(nodes) if day == later][0])
-        nodes = run.wait_for(lambda ns: text_of(ns, "review") == "Pay periods start: Sun Oct 25 → Sat Oct 24", 15)
+        tap_day(nodes, new_last)
+        nodes = run.wait_for(lambda ns: text_of(ns, "review") == want_review, 15)
+        nodes = visit(nodes, new_first)
         run.shot("07c-pay-periods-new-period")
         shade = shaded_days(nodes, run.shots / "07c-pay-periods-new-period.png")
-        want_preview = f"Pay period: {saved_two} → Oct 24 – Oct 30, 7 days"
-        check("a day before the first day starts a new pick, a later day is its last day, and the last day again clears it",
-              step1 == ([str(before)], [], False, False, True) and step3 == ([str(before)], False)
-              and text_of(nodes, "period_preview") == want_preview and marked(nodes) == [str(before), str(later)]
-              and shade == shade_wanted(before, later, before) and bool(by_id(nodes, "confirm")),
+        want_preview = f"Pay period: {saved_two} → {two_weeks(new_first, today, 7)}, 7 days"
+        in_month = [str(d) for d in (new_first, new_last) if (d.year, d.month) == (new_first.year, new_first.month)]
+        check("a day after the current period starts a new pick, a later day is its last day, and the last day again clears it",
+              step1[1:] == ([], False, False, True) and str(new_first) in step1[0] and str(cur_last) not in step1[0]
+              and str(new_first) in step3[0] and not step3[1]
+              and text_of(nodes, "period_preview") == want_preview and marked(nodes) == in_month
+              and shade == shade_wanted(new_first, new_last, new_first) and bool(by_id(nodes, "confirm")),
               f"{step1} {step3} {text_of(nodes, 'period_preview')!r} want {want_preview!r} highlighted {marked(nodes)} shaded {shade}")
-        run.tap([n for day, n in cal_days(nodes) if day == before][0])
+        run.tap([n for day, n in cal_days(nodes) if day == new_first][0])
         nodes = run.wait_for(lambda ns: (text_of(ns, "review") or "").endswith("→ none"), 15)
         run.shot("07d-pay-periods-off")
         shade = shaded_days(nodes, run.shots / "07d-pay-periods-off.png")
@@ -758,17 +786,16 @@ def main():
               and text_of(nodes, "period_preview") == f"Pay period: {saved_two} → none" and not marked(nodes)
               and bool(by_id(nodes, "confirm")) and not shade,
               f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} highlighted {marked(nodes)} shaded {shade}")
-        run.tap([n for day, n in cal_days(nodes) if day == saved_day][0])
+        tap_day(nodes, cur_first)
         nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
-        nodes = page(nodes, "cal_next", saved_last)
-        run.tap([n for day, n in cal_days(nodes) if day == saved_last][0])
+        tap_day(nodes, cur_last)
         nodes = run.wait_for(lambda ns: not by_id(ns, "review") and bool(by_id(ns, "close")), 15)
-        november = marked(nodes)
-        nodes = page(nodes, "cal_prev", saved_day)
-        check("picking the saved first and last day again is no change: Close, no review, both highlighted",
+        last_marked = marked(nodes)
+        nodes = visit(nodes, cur_first)
+        check("picking the current period's first and last day again is no change: Close, no review, both highlighted",
               not by_id(nodes, "review") and not by_id(nodes, "confirm") and text_of(nodes, "period_preview") == set_preview
-              and marked(nodes) == [str(saved_day)] and november == [str(saved_last)],
-              f"{text_of(nodes, 'review')!r} highlighted {marked(nodes)} then {november}")
+              and str(cur_first) in marked(nodes) and str(cur_last) in last_marked,
+              f"{text_of(nodes, 'review')!r} highlighted {marked(nodes)} then {last_marked}")
         reset_node = by_id(nodes, "pay_reset")
         run.tap(reset_node[0])
         nodes = run.wait_for(lambda ns: (text_of(ns, "review") or "").endswith("→ none"), 15)
