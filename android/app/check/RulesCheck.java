@@ -6,16 +6,15 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 
-/** Prints what the rules decide, for tests/test_calltally.py to compare and to send to a real server. */
+/** Prints what the rules, the id rule and the record's statements decide, for tests/test_calltally.py to compare with calltally.py. */
 public class RulesCheck {
     public static void main(String[] args) {
-        Map<String, String> work = new HashMap<>();
-        work.put("5551234567", "Dana-Work");
-        work.put("5552223333", "Sam \"Q\" - Work");
+        Map<String, String> work = Rules.countingNumbers(Arrays.asList(
+            person("a", "Dana-Work", true, true, "5551234567"), person("b", "Sam \"Q\" - Work", true, true, "5552223333")));
         long t = 1793000000L;
         show("one", Rules.classify(1, Arrays.asList("+1 (555) 123-4567"), work));
         show("personal", Rules.classify(2, Arrays.asList("5559998888"), work));
@@ -27,31 +26,24 @@ public class RulesCheck {
         Rules.Entry fine = new Rules.Entry("call", t, "Dana-Work", "5551234567", "in", 1);
         Rules.Entry tooLate = new Rules.Entry("call", 1793000000000000L, "Dana-Work", "5551234567", "in", 1);
         System.out.println("acceptable " + far.acceptable() + longNumber.acceptable() + tooLate.acceptable() + fine.acceptable());
-        System.out.println("names " + Rules.isWork("Dana-Work") + Rules.isWork("Sam - Work") + Rules.isWork("Mom") + Rules.isWork("Dana-Work Jr") + Rules.isWork(null));
-        System.out.println("names-more " + Rules.isWork("Lee -Work ") + Rules.isWork("Kim- Work") + Rules.isWork("Work Plumbing") + Rules.isWork("Dana-work") + Rules.isWork("Bets"));
         System.out.println("seconds " + Rules.toSeconds(1793000000999L, false) + " " + Rules.toSeconds(1793000000L, true) + " " + Rules.toSeconds(1793000000999L, true));
-        System.out.println("body " + Rules.body(Arrays.asList(
-            new Rules.Entry("call", t, "Dana-Work", "5551234567", "in", 60),
-            new Rules.Entry("text", t + 1, "Sam \"Q\" - Work", "thread-4", "out", 0))));
-        System.out.println("status " + Rules.statusBody("Texts couldn't be read.\nAndroid  returned \"no\" messages. "));
-        System.out.println("status-empty " + Rules.statusBody(""));
-        StringBuilder longText = new StringBuilder();
-        for (int i = 0; i < 30; i++) longText.append("0123456789");
-        System.out.println("status-long " + Rules.statusBody(longText.toString()));
-        termuxFixtures();
+        fixtures();
         decisions();
+        people();
+        ledger();
+        statements();
     }
 
     /**
-     * The calls and texts the old Termux script was tested with, as the app reads them: the call log and SMS table give
-     * times in milliseconds, and the contact list gives every number on a contact. The test pins the entry ids the Termux
-     * script produced for these, so rows it uploaded are never added twice when the app sends them again. Every decision
-     * goes through the same Rules functions Collector calls on the phone.
+     * The calls and texts the old Termux script was tested with, as the app reads them now that ticks decide: the call log
+     * and SMS table give times in milliseconds. Dana and Sam are ticked; Mom and Work Plumbing are on the phone, not ticked.
+     * The test pins the entry ids the Termux script produced for these: the id rule never changed.
      */
-    private static void termuxFixtures() {
-        Map<String, String> work = contacts(
-            "Dana-Work", "+1 (555) 123-4567", "Dana-Work", "5550001111", "Sam - Work", "555-222-3333",
-            "Mom", "5559998888", "Work Plumbing", "5557776666");
+    private static void fixtures() {
+        List<Rules.Person> people = Arrays.asList(
+            person("dana", "Dana-Work", true, true, "+1 (555) 123-4567", "5550001111"), person("sam", "Sam - Work", true, true, "555-222-3333"),
+            person("mom", "Mom", false, true, "5559998888"), person("plumb", "Work Plumbing", false, true, "5557776666"));
+        Map<String, String> work = Rules.countingNumbers(people);
         System.out.println("fixture-work " + new TreeMap<>(work));
         List<Rules.Entry> entries = new ArrayList<>();
         call(entries, work, "15551234567", 1793812320000L, Rules.CALL_INCOMING, 872);
@@ -73,28 +65,31 @@ public class RulesCheck {
         keep(entries, texts.sms(2, "5559998888", 1793822400000L, Rules.BOX_RECEIVED));
         keep(entries, texts.sms(3, "5550001111", 1793729100000L, Rules.BOX_SENT));
         keep(entries, texts.sms(5, "+15551234567", 1793836800000L, Rules.BOX_RECEIVED));
-        System.out.println("fixture-body " + Rules.body(entries));
+        System.out.println("fixture-body " + body(entries));
+        System.out.println("fixture-ids " + ids(entries));
         List<Rules.Entry> group = new ArrayList<>();
         keep(group, texts.sms(4, "+15551234567", 1793836800000L, Rules.BOX_RECEIVED));
-        System.out.println("fixture-group " + Rules.body(group));
+        System.out.println("fixture-group " + body(group));
+        System.out.println("fixture-group-ids " + ids(group));
         System.out.println("fixture-groups " + texts.groups());
-        // Bob-Work renamed to Bob: his number is no longer a work number, so nothing of his is found.
-        Map<String, String> renamed = contacts("Bob", "5554443333");
-        show("renamed", Rules.classify(6, Arrays.asList("5554443333"), renamed));
-        System.out.println("renamed-call " + skipped(Rules.call(renamed, "5554443333", 1793000000000L, Rules.CALL_INCOMING, 60)));
-        System.out.println("renamed-text " + skipped(new Rules.Texts(renamed, new HashMap<Long, List<String>>())
+        // Bob unticked: his number no longer counts, so nothing of his is found.
+        Map<String, String> unticked = Rules.countingNumbers(Collections.singletonList(person("bob", "Bob-Work", false, true, "5554443333")));
+        show("unticked", Rules.classify(6, Arrays.asList("5554443333"), unticked));
+        System.out.println("unticked-call " + skipped(Rules.call(unticked, "5554443333", 1793000000000L, Rules.CALL_INCOMING, 60)));
+        System.out.println("unticked-text " + skipped(new Rules.Texts(unticked, new HashMap<Long, List<String>>())
             .sms(6, "5554443333", 1793000000000L, Rules.BOX_RECEIVED)));
     }
 
-    /** Which rows are left out and why, the same-second rule, batching, and how conversations get their people. */
+    /** Which rows are left out and why, the same-second rule, and how conversations get their people. */
     private static void decisions() {
-        Map<String, String> work = contacts("Dana-Work", "555-123-4567", "Mom", "5559998888");
+        Map<String, String> work = Rules.countingNumbers(Arrays.asList(person("d", "Dana-Work", true, true, "555-123-4567"),
+            person("m", "Mom", false, true, "5559998888")));
         long ms = 1793000000000L;
         StringBuilder calls = new StringBuilder();
         for (int type = 1; type <= 7; type++) calls.append(type).append('=').append(skipped(Rules.call(work, "5551234567", ms, type, 9))).append(' ');
         System.out.println("call-kinds " + calls.toString().trim());
         System.out.println("call-personal " + skipped(Rules.call(work, "5559998888", ms, Rules.CALL_INCOMING, 9)));
-        System.out.println("call-missed " + Rules.call(work, "5551234567", ms + 999, Rules.CALL_MISSED, 7).entry.json());
+        System.out.println("call-missed " + json(Rules.call(work, "5551234567", ms + 999, Rules.CALL_MISSED, 7).entry));
 
         Map<Long, List<String>> threads = new HashMap<>();
         threads.put(1L, Arrays.asList("5551234567"));
@@ -111,37 +106,16 @@ public class RulesCheck {
         for (int kind : new int[] {-1, 128, 130, 132, 134, 135, 136}) kinds.append(kind).append('=').append(skipped(texts.mms(2, 1793000000L, Rules.BOX_RECEIVED, kind))).append(' ');
         System.out.println("mms-kinds " + kinds.toString().trim());
         System.out.println("mms-unknown-thread " + skipped(texts.mms(7, 1793000000L, Rules.BOX_RECEIVED, 132)));
-        System.out.println("mms-millis " + texts.mms(2, 1793000000999L, Rules.BOX_SENT, 128).entry.json());
+        System.out.println("mms-millis " + json(texts.mms(2, 1793000000999L, Rules.BOX_SENT, 128).entry));
         System.out.println("groups " + texts.groups());
 
-        // Two messages in one conversation, same direction, same second.
+        // Two messages in one conversation, same direction, same second: the same fields, so the record keeps one.
         Rules.Entry a = texts.sms(1, "5551234567", ms + 100, Rules.BOX_RECEIVED).entry;
         Rules.Entry b = texts.sms(1, "5551234567", ms + 700, Rules.BOX_RECEIVED).entry;
-        System.out.println("same-second " + a.key().equals(b.key()) + " " + a.json().equals(b.json()));
-        Rules.Fresh both = Rules.fresh(Arrays.asList(a, b), new HashSet<String>());
-        Set<String> sent = new HashSet<>(Collections.singletonList(Rules.hash(a.key())));
-        Rules.Fresh again = Rules.fresh(Arrays.asList(a, b, new Rules.Entry("call", 0, "Dana-Work", "5551234567", "in", 1)), sent);
-        System.out.println("fresh " + both.entries.size() + " " + both.unusable + " " + again.entries.size() + " " + again.unusable);
-        System.out.println("same-second-body " + Rules.body(both.entries));
-
-        StringBuilder sizes = new StringBuilder();
-        for (int n : new int[] {0, 1, 499, 500, 501, 1000, 1001, 1201}) {
-            List<Rules.Entry> many = new ArrayList<>();
-            for (int i = 0; i < n; i++) many.add(new Rules.Entry("call", 1793000000L + i, "Dana-Work", "5551234567", "in", 1));
-            List<Integer> parts = new ArrayList<>();
-            List<Rules.Entry> joined = new ArrayList<>();
-            for (List<Rules.Entry> batch : Rules.batches(many)) {
-                parts.add(batch.size());
-                joined.addAll(batch);
-            }
-            sizes.append(n).append('=').append(parts.toString().replace(" ", "")).append(joined.equals(many) ? "" : "!order").append(' ');
-        }
-        System.out.println("batches " + sizes.toString().trim());
-        List<Rules.Entry> full = new ArrayList<>();
-        for (int i = 0; i < 501; i++) full.add(new Rules.Entry("call", 1793000000L + i, "Dana-Work", "5551234567", "in", 1));
-        List<List<Rules.Entry>> split = Rules.batches(full);
-        System.out.println("batch-body-1 " + Rules.body(split.get(0)));
-        System.out.println("batch-body-2 " + Rules.body(split.get(1)));
+        System.out.println("same-second " + json(a).equals(json(b)));
+        Memory book = new Memory();
+        Ledger.Added added = Ledger.add(book, Arrays.asList(a, b, new Rules.Entry("call", 0, "Dana-Work", "5551234567", "in", 1)));
+        System.out.println("same-second-added " + added.added + " " + added.repeats + " " + added.unusable);
 
         Map<String, String> addresses = new HashMap<>();
         addresses.put("1", "+15551234567");
@@ -162,16 +136,166 @@ public class RulesCheck {
             Arrays.asList("5559998888", "+15551234567"), Arrays.asList("+15551234567"), new ArrayList<String>())));
         System.out.println("usable " + Rules.usableAddress("5551234567") + Rules.usableAddress("insert-address-token")
             + Rules.usableAddress("") + Rules.usableAddress(null));
-        Map<String, String> contacts = contacts("Dana-Work ", "(555) 123-4567", "Dana-Work", "+1 555 000 1111", "Mom", "555-123-4567",
-            "Lee-Work", "no digits", "Kim -Work", "15557770000");
-        System.out.println("contacts " + new TreeMap<>(contacts));
     }
 
-    /** As Collector reads the contact list: each saved number of each contact, in order. */
-    private static Map<String, String> contacts(String... nameThenNumber) {
-        Map<String, String> work = new HashMap<>();
-        for (int i = 0; i < nameThenNumber.length; i += 2) Rules.addContact(work, nameThenNumber[i], nameThenNumber[i + 1]);
-        return work;
+    /** The people table: which numbers count, and what a read of the phone's contacts changes. */
+    private static void people() {
+        List<Rules.Person> known = Arrays.asList(
+            person("dana", "Dana-Work", true, true, "(555) 123-4567", "+1 555 000 1111"),
+            person("gone", "Old Name", true, false, "5554443333"),
+            person("lee", "Lee", false, true, "555-777-0000"),
+            person("noname", "", true, true, "no digits", "15556667777"));
+        System.out.println("counting " + new TreeMap<>(Rules.countingNumbers(known)));
+        // A number shared by a person on the phone and one who left: the one on the phone names it.
+        System.out.println("counting-shared " + new TreeMap<>(Rules.countingNumbers(Arrays.asList(
+            person("a", "On Phone", true, true, "5551112222"), person("b", "Left", true, false, "5551112222")))));
+        System.out.println("refresh-null " + people(Rules.refreshPeople(known, null)));
+        System.out.println("refresh-empty " + people(Rules.refreshPeople(known, new ArrayList<Rules.Person>())));
+        // Dana renamed with a new number and one number gone from the contact; Lee is gone; Old Name is back.
+        List<Rules.Person> phone = Arrays.asList(
+            person("dana", "Dana New-Work", false, true, "5551234567", "555-888-9999"),
+            person("gone", "", false, true, "5554443333"),
+            person("other", "Someone", false, true, "5550000000"));
+        System.out.println("refresh " + people(Rules.refreshPeople(known, phone)));
+        System.out.println("join " + Rules.joinNumbers(Arrays.asList("+1 555 123 4567", "none"), Arrays.asList("5551234567", " 555 000 1111 ")));
+    }
+
+    /**
+     * The id rule and the repeat rule on fixed rows, added one at a time to a record kept in memory. The test adds the same
+     * rows to calltally.py's Store and compares the ids, the decisions and the rows left.
+     */
+    private static void ledger() {
+        List<Rules.Entry> rows = Arrays.asList(
+            new Rules.Entry("call", 1793000000L, "2026-10-26 01:53:20", "Dana-Work", "+1 (555) 123-4567", "in", 60),
+            // Same moment, number written another way, new name: a repeat that renames.
+            new Rules.Entry("call", 1793000000L, "2026-10-26 01:53:20", " Dana Renamed-Work ", "5551234567", "in", 60),
+            // Same clock time, another moment: a repeat (a run that read the zone wrongly).
+            new Rules.Entry("call", 1793003600L, "2026-10-26 01:53:20", "Dana-Work", "15551234567", "in", 60),
+            // Same moment, another clock time: a repeat by id (a change of time zone), keeping the first day.
+            new Rules.Entry("call", 1793000000L, "2026-10-27 04:53:20", "Dana-Work", "5551234567", "in", 60),
+            new Rules.Entry("call", 1793000000L, "2026-10-26 01:53:20", "Dana-Work", "5551234567", "out", 60),
+            new Rules.Entry("text", 1793000010L, "2026-10-26 01:53:30", "Dana-Work", "5551234567", "in", 99),
+            new Rules.Entry("text", 1793000010L, "2026-10-26 01:53:30", "Group: Dana-Work +2", "thread-1234567890", "in", 0),
+            new Rules.Entry("text", 1793000010L, "2026-10-26 01:53:30", "Short", "1234567890", "in", 0),
+            new Rules.Entry("text", 1793000020L, "2026-10-26 01:54:20", "Odd", " Unknown ", "in", 0),
+            new Rules.Entry("text", 1793000030L, "2026-10-26 01:54:20", "Odd", "unknown", "in", 0),
+            new Rules.Entry("call", 1793000040L, "2026-10-26 01:54:40", "Wide", "١٢٣٤٥٦٧٨٩٠١", "out", 5),
+            new Rules.Entry("call", 0L, "1969-12-31 16:00:00", "Bad", "5551234567", "in", 1));
+        Memory book = new Memory();
+        StringBuilder steps = new StringBuilder("[");
+        for (Rules.Entry entry : rows) {
+            Ledger.Added added = Ledger.add(book, Collections.singletonList(entry));
+            if (steps.length() > 1) steps.append(',');
+            steps.append(quote(Ledger.entryId(entry.kind, entry.number, entry.epoch, entry.direction))).append(',')
+                .append(quote(added.added == 1 ? "added" : added.repeats == 1 ? "repeat" : "unusable"));
+        }
+        System.out.println("ledger-in " + body(rows));
+        System.out.println("ledger-steps " + steps.append(']'));
+        StringBuilder kept = new StringBuilder("[");
+        for (Ledger.Row row : book.rows) {
+            if (kept.length() > 1) kept.append(',');
+            kept.append("{\"id\":").append(quote(row.id)).append(",\"kind\":").append(quote(row.kind)).append(",\"epoch\":").append(row.epoch)
+                .append(",\"at\":").append(quote(row.at)).append(",\"day\":").append(quote(row.day)).append(",\"contact\":").append(quote(row.contact))
+                .append(",\"number\":").append(quote(row.number)).append(",\"number_key\":").append(quote(row.numberKey))
+                .append(",\"direction\":").append(quote(row.direction)).append(",\"duration_s\":").append(row.durationS).append('}');
+        }
+        System.out.println("ledger-rows " + kept.append(']'));
+        StringBuilder keys = new StringBuilder("[");
+        for (String number : new String[] {"thread-12", "+1 (555) 123-4567", "  Unknown  ", "", " Private ", "١٢٣"}) {
+            if (keys.length() > 1) keys.append(',');
+            keys.append('[').append(quote(number)).append(',').append(quote(Ledger.numberKey(number))).append(']');
+        }
+        System.out.println("number-keys " + keys.append(']'));
+    }
+
+    private static void statements() {
+        StringBuilder schema = new StringBuilder("[");
+        for (String statement : Sql.SCHEMA) schema.append(schema.length() > 1 ? "," : "").append(quote(statement));
+        System.out.println("sql-schema " + schema.append(']'));
+        System.out.println("sql-find " + Sql.FIND);
+        System.out.println("sql-days " + Sql.DAYS);
+        System.out.println("sql-day " + Sql.DAY);
+        System.out.println("sql-totals-all " + Sql.TOTALS_ALL);
+        System.out.println("sql-totals-range " + Sql.TOTALS_RANGE);
+        System.out.println("sql-contacts-all " + Sql.CONTACTS_ALL);
+        System.out.println("sql-contacts-range " + Sql.CONTACTS_RANGE);
+        System.out.println("sql-earliest " + Sql.EARLIEST);
+    }
+
+    /** A record kept in a list, with the repeat lookup the record's FIND statement makes. */
+    private static final class Memory implements Ledger.Book {
+        final List<Ledger.Row> rows = new ArrayList<>();
+        final Map<String, String> renamed = new HashMap<>();
+
+        @Override
+        public String find(Ledger.Row row) {
+            for (Ledger.Row kept : rows) {
+                if (kept.id.equals(row.id) || (kept.kind.equals(row.kind) && kept.numberKey.equals(row.numberKey)
+                    && kept.at.equals(row.at) && kept.direction.equals(row.direction))) return kept.id;
+            }
+            return null;
+        }
+
+        @Override
+        public void insert(Ledger.Row row) {
+            rows.add(row);
+        }
+
+        @Override
+        public void rename(String id, String contact) {
+            for (int i = 0; i < rows.size(); i++) {
+                Ledger.Row kept = rows.get(i);
+                if (!kept.id.equals(id)) continue;
+                rows.set(i, new Ledger.Row(new Rules.Entry(kept.kind, kept.epoch, kept.at, contact, kept.number, kept.direction, kept.durationS)));
+            }
+        }
+    }
+
+    private static Rules.Person person(String key, String name, boolean ticked, boolean onPhone, String... numbers) {
+        return new Rules.Person(key, name, Arrays.asList(numbers), ticked, onPhone);
+    }
+
+    private static String people(List<Rules.Person> people) {
+        StringBuilder out = new StringBuilder();
+        for (Rules.Person p : people) {
+            out.append(p.key).append('=').append(p.name).append(p.numbers.toString().replace(", ", ";"))
+                .append(p.ticked ? "+ticked" : "+unticked").append(p.onPhone ? "+on" : "+off").append(' ');
+        }
+        return out.toString().trim();
+    }
+
+    private static String ids(List<Rules.Entry> entries) {
+        StringBuilder out = new StringBuilder("[");
+        for (Rules.Entry e : entries) {
+            if (out.length() > 1) out.append(',');
+            out.append(quote(Ledger.entryId(e.kind, e.number, e.epoch, e.direction)));
+        }
+        return out.append(']').toString();
+    }
+
+    private static String json(Rules.Entry e) {
+        return "{\"kind\":" + quote(e.kind) + ",\"at\":" + quote(e.at) + ",\"epoch\":" + e.epoch + ",\"contact\":" + quote(e.contact)
+            + ",\"number\":" + quote(e.number) + ",\"direction\":" + quote(e.direction) + ",\"duration_s\":" + e.duration + "}";
+    }
+
+    private static String body(List<Rules.Entry> entries) {
+        StringBuilder out = new StringBuilder("{\"entries\":[");
+        for (int i = 0; i < entries.size(); i++) {
+            if (i > 0) out.append(',');
+            out.append(json(entries.get(i)));
+        }
+        return out.append("]}").toString();
+    }
+
+    private static String quote(String text) {
+        StringBuilder out = new StringBuilder("\"");
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '"' || c == '\\') out.append('\\').append(c);
+            else if (c < 0x20 || c > 0x7e) out.append(String.format(Locale.US, "\\u%04x", (int) c));
+            else out.append(c);
+        }
+        return out.append('"').toString();
     }
 
     private static void call(List<Rules.Entry> out, Map<String, String> work, String number, long millis, int type, long seconds) {

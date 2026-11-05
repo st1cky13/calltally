@@ -8,12 +8,13 @@ import android.provider.CallLog;
 import android.provider.ContactsContract.CommonDataKinds.Phone;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Reads the phone's contacts, calls and messages into plain values and hands each row to Rules, which decides what it
- * becomes. Never asks for what a message says, so the words can't leave.
+ * becomes. Never asks for what a message says, so the words are never read.
  */
 final class Collector {
     private static final Uri SMS = Uri.parse("content://sms");
@@ -22,7 +23,7 @@ final class Collector {
     private static final Uri CANONICAL = Uri.parse("content://mms-sms/canonical-addresses");
 
     private final ContentResolver resolver;
-    private final Map<String, String> workNames = new HashMap<>();
+    private final Map<String, String> workNames;
     private final Map<Long, List<String>> threadPeople = new HashMap<>();
     private Rules.Texts texts;
     private boolean conversationList = true;
@@ -30,8 +31,10 @@ final class Collector {
     private String textsProblem;
     private int otherCalls;
 
-    Collector(Context context) {
+    /** workNames: the numbers that count, by their last ten digits, with the name each counts under. */
+    Collector(Context context, Map<String, String> workNames) {
         resolver = context.getContentResolver();
+        this.workNames = workNames;
     }
 
     static final class Problem extends RuntimeException {
@@ -41,6 +44,10 @@ final class Collector {
     }
 
     private Cursor open(Uri uri, String[] columns, String what) {
+        return open(resolver, uri, columns, what);
+    }
+
+    private static Cursor open(ContentResolver resolver, Uri uri, String[] columns, String what) {
         Cursor cursor = resolver.query(uri, columns, null, null, null);
         if (cursor == null) throw new Problem("Android didn't return your " + what + ".");
         return cursor;
@@ -53,11 +60,10 @@ final class Collector {
     }
 
     /**
-     * Without contacts nothing can be matched, so that stops the run. Calls and texts are read apart: when one can't be
-     * read the other still goes up, and problem() says which part is missing. Each part is all or nothing.
+     * Calls and texts are read apart: when one can't be read the other is still kept, and problem() says which part is
+     * missing. Each part is all or nothing.
      */
     List<Rules.Entry> collect() {
-        readContacts();
         List<Rules.Entry> entries = new ArrayList<>();
         try {
             List<Rules.Entry> calls = new ArrayList<>();
@@ -73,7 +79,7 @@ final class Collector {
             threadPeople.putAll(peopleFromMessages());
             texts = new Rules.Texts(workNames, threadPeople);
             int messages = readSms(found) + readMms(found);
-            // A phone that suddenly shows no messages is having a problem. Reporting that keeps the page from looking healthy.
+            // A phone that suddenly shows no messages is having a problem. Saying so keeps the screen from looking healthy.
             if (messages == 0) throw new Problem("Android returned no messages.");
             entries.addAll(found);
         } catch (RuntimeException error) {
@@ -91,14 +97,14 @@ final class Collector {
         return "This phone stores " + what + " in a way this app doesn't know.";
     }
 
-    /** The part that couldn't be read, in one plain sentence for the screen and the page, or empty when all was read. */
+    /** The part that couldn't be read, in one plain sentence for the screen, or empty when all was read. */
     String problem() {
         if (callsProblem != null) return "Calls couldn't be read. " + callsProblem;
         if (textsProblem != null) return "Texts couldn't be read. " + textsProblem;
         return "";
     }
 
-    /** Calls with work contacts that were left out for their kind, such as voicemail or blocked calls. */
+    /** Calls with ticked people that were left out for their kind, such as voicemail or blocked calls. */
     int otherCalls() {
         return otherCalls;
     }
@@ -111,14 +117,33 @@ final class Collector {
         return texts == null ? 0 : texts.groups();
     }
 
-    /** Every number saved for every contact. A number on both a work and a personal contact counts as work. */
-    private void readContacts() {
-        String[] columns = {Phone.DISPLAY_NAME, Phone.NUMBER};
-        try (Cursor cursor = open(Phone.CONTENT_URI, columns, "contacts")) {
-            while (cursor.moveToNext()) Rules.addContact(workNames, cursor.getString(0), cursor.getString(1));
+    /**
+     * Every contact on the phone with its saved numbers, in the order Android gives them, one Person per contact. A
+     * contact is known by its lookup key, which stays the same while the contact exists. Throws Problem when Android
+     * returns nothing at all, and SecurityException without permission.
+     */
+    static List<Rules.Person> readContacts(ContentResolver resolver) {
+        String[] columns = {Phone.LOOKUP_KEY, Phone.CONTACT_ID, Phone.DISPLAY_NAME, Phone.NUMBER};
+        Map<String, String> names = new LinkedHashMap<>();
+        Map<String, List<String>> numbers = new HashMap<>();
+        try (Cursor cursor = open(resolver, Phone.CONTENT_URI, columns, "contacts")) {
+            while (cursor.moveToNext()) {
+                String key = cursor.getString(0);
+                if (key == null || key.isEmpty()) key = "contact-" + cursor.getLong(1);
+                String number = cursor.getString(3);
+                if (!names.containsKey(key)) {
+                    names.put(key, cursor.getString(2));
+                    numbers.put(key, new ArrayList<String>());
+                }
+                if (number != null && !number.trim().isEmpty()) numbers.get(key).add(number);
+            }
         }
-        // With none found, everything would look personal and the page would still show a healthy upload.
-        if (workNames.isEmpty()) throw new Problem("No contacts ending in -Work were found.");
+        List<Rules.Person> out = new ArrayList<>();
+        for (Map.Entry<String, String> contact : names.entrySet()) {
+            List<String> list = Rules.joinNumbers(new ArrayList<String>(), numbers.get(contact.getKey()));
+            if (!list.isEmpty()) out.add(new Rules.Person(contact.getKey(), contact.getValue(), list, false, true));
+        }
+        return out;
     }
 
     /** Who is in each conversation, from Android's conversation list. */

@@ -426,19 +426,23 @@ class StatusTests(ServerCase):
 
 
 class AndroidRulesTests(ServerCase):
-    """The Android app's rules, run on a real JVM and sent to a real server."""
+    """The Android app's rules, id rule and record statements, run on a real JVM and compared with calltally.py."""
     TOOLS = Path.home() / "local" / "calltally-build" / "jdk" / "bin"
+    _rules = None
 
     def run_rules(self):
         if not (self.TOOLS / "javac").exists():
             self.skipTest("no JDK")
-        out = Path(self.temp) / "classes"
-        source = ROOT / "android" / "app"
-        subprocess.run([str(self.TOOLS / "javac"), "-nowarn", "-d", str(out), str(source / "src/com/calltally/app/Rules.java"),
-                        str(source / "check/RulesCheck.java")], check=True, capture_output=True)
-        done = subprocess.run([str(self.TOOLS / "java"), "-cp", str(out), "com.calltally.app.RulesCheck"],
-                              check=True, capture_output=True, text=True, env={**os.environ, "TZ": "America/Los_Angeles"})
-        return dict(line.split(" ", 1) for line in done.stdout.splitlines())
+        if AndroidRulesTests._rules is None:
+            out = Path(self.temp) / "classes"
+            source = ROOT / "android" / "app"
+            app = source / "src" / "com" / "calltally" / "app"
+            subprocess.run([str(self.TOOLS / "javac"), "-nowarn", "-d", str(out), str(app / "Rules.java"), str(app / "Ledger.java"),
+                            str(app / "Sql.java"), str(source / "check/RulesCheck.java")], check=True, capture_output=True)
+            done = subprocess.run([str(self.TOOLS / "java"), "-cp", str(out), "com.calltally.app.RulesCheck"],
+                                  check=True, capture_output=True, text=True, env={**os.environ, "TZ": "America/Los_Angeles"})
+            AndroidRulesTests._rules = dict(line.split(" ", 1) for line in done.stdout.splitlines())
+        return AndroidRulesTests._rules
 
     def test_who_counts(self):
         rules = self.run_rules()
@@ -447,69 +451,128 @@ class AndroidRulesTests(ServerCase):
         self.assertEqual(rules["mixed"], "Group: Dana-Work +2 | thread-3")
         self.assertEqual(rules["two-work"], 'Group: Dana-Work, Sam "Q" - Work | thread-4')
         self.assertEqual(rules["one-extra"], "Dana-Work | 5551234567")
-        self.assertEqual(rules["names"], "truetruefalsefalsefalse")
-        self.assertEqual(rules["names-more"], "truetruefalsefalsefalse")
         self.assertEqual(rules["acceptable"], "falsefalsefalsetrue")
         self.assertEqual(rules["seconds"], "1793000000 1793000000 1793000000")
-        # Bob-Work renamed to Bob: his number stops being a work number, so nothing of his is uploaded.
-        self.assertEqual(rules["renamed"], "none")
-
-    def test_status_line_is_one_line_and_accepted(self):
-        rules = self.run_rules()
-        self.assertEqual(json.loads(rules["status"]), {"text": 'Texts couldn\'t be read. Android returned "no" messages.'})
-        self.assertEqual(json.loads(rules["status-empty"]), {"text": ""})
-        self.assertEqual(len(json.loads(rules["status-long"])["text"]), 200)
-        for key in ("status", "status-long"):
-            status, _ = self.post("/api/status", None, raw=rules[key].encode())
-            self.assertEqual(status, 200, key)
-        self.assertEqual(len(self.get("/api/range?from=2026-11-01&to=2026-11-30")["phone_status"]), 200)
-        self.assertEqual(self.post("/api/status", None, raw=rules["status-empty"].encode())[0], 200)
-        self.assertIsNone(self.get("/api/range?from=2026-11-01&to=2026-11-30")["phone_status"])
-
-    def test_upload_is_accepted_and_matches_earlier_termux_entries(self):
-        rules = self.run_rules()
-        # The same call as the Termux script would have uploaded, deleted before the app takes over.
-        sent = json.loads(rules["body"])["entries"]
-        self.assertEqual((sent[0]["epoch"], sent[1]["epoch"]), (1793000000, 1793000001))
-        self.post("/api/upload", {"entries": [entry(epoch=sent[0]["epoch"], at=sent[0]["at"])]})
-        day = sent[0]["at"][:10]
-        first = self.get(f"/api/day?day={day}")["entries"][0]["id"]
-        self.post("/api/delete", {"id": first})
-        status, result = self.post("/api/upload", None, raw=rules["body"].encode())
-        self.assertEqual(status, 200, result)
-        self.assertEqual(result, {"received": 2, "added": 1})
-        rows = self.get(f"/api/day?day={day}")["entries"]
-        self.assertIsNotNone(next(r for r in rows if r["id"] == first)["deleted_at"])
-        self.assertTrue(any(r["contact"] == 'Sam "Q" - Work' and r["number"] == "thread-4" for r in rows))
-
+        # Unticked, a name ending in -Work no longer counts: ticks alone decide.
+        self.assertEqual((rules["unticked"], rules["unticked-call"], rules["unticked-text"]), ("none", "skip:personal", "skip:personal"))
 
     def fixture(self, rules=None):
         rules = rules or self.run_rules()
         return json.loads(rules["fixture-body"])["entries"], json.loads(rules["fixture-group"])["entries"]
 
-    def test_app_gives_the_ids_the_termux_script_gave(self):
-        sent, group = self.fixture()
-        ids = [calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in sent]
-        self.assertEqual(sorted(ids), sorted(TERMUX_IDS))
+    def test_app_gives_the_ids_the_termux_script_and_the_server_gave(self):
+        rules = self.run_rules()
+        sent, group = self.fixture(rules)
+        server_ids = [calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in sent]
+        self.assertEqual(json.loads(rules["fixture-ids"]), server_ids)
+        self.assertEqual(sorted(server_ids), sorted(TERMUX_IDS))
         by_id = dict(TERMUX_UPLOAD)
-        for key, e in zip(ids, sent):
-            # Same moment and clock time too, so the server's second check for a repeat also matches.
+        for key, e in zip(server_ids, sent):
+            # Same moment and clock time too, so the second check for a repeat also matches.
             self.assertEqual((e["at"], e["epoch"], e["direction"]), (by_id[key]["at"], by_id[key]["epoch"], by_id[key]["direction"]))
         # A group of three or more is known by its conversation, so it can't match what the script sent for it.
+        self.assertEqual(json.loads(rules["fixture-group-ids"]), [APP_GROUP_ID])
         self.assertEqual([calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in group], [APP_GROUP_ID])
-        self.assertNotIn(APP_GROUP_ID, TERMUX_IDS)
 
-    def test_app_upload_adds_nothing_over_termux_rows(self):
+    def test_record_adds_and_repeats_like_the_server(self):
         rules = self.run_rules()
-        self.post("/api/upload", {"entries": [e for _, e in TERMUX_UPLOAD]})
-        status, result = self.post("/api/upload", None, raw=rules["fixture-body"].encode())
-        self.assertEqual((status, result), (200, {"received": 8, "added": 0}))
-        status, result = self.post("/api/upload", None, raw=rules["fixture-group"].encode())
-        self.assertEqual((status, result), (200, {"received": 1, "added": 1}))
-        ids = {r["id"] for day in ("2026-11-03", "2026-11-04") for r in self.get(f"/api/day?day={day}")["entries"]}
-        self.assertEqual(ids, TERMUX_IDS | {APP_GROUP_ID})
+        steps = json.loads(rules["ledger-steps"])
+        rows = json.loads(rules["ledger-in"])["entries"]
+        self.assertEqual(len(steps), 2 * len(rows))
+        for i, raw in enumerate(rows):
+            key, decision = steps[2 * i], steps[2 * i + 1]
+            self.assertEqual(key, calltally.entry_id(raw["kind"], raw["number"], raw["epoch"], raw["direction"]), raw)
+            try:
+                calltally.clean_entry(raw)
+            except calltally.BadRequest:
+                self.assertEqual(decision, "unusable", raw)
+                continue
+            added = self.store.add([raw])["added"]
+            self.assertEqual(decision, "added" if added else "repeat", raw)
+        self.assertEqual(sorted(steps[1::2]), ["added"] * 7 + ["repeat"] * 4 + ["unusable"])
+        conn = self.store.connect()
+        try:
+            kept = [dict(r) for r in conn.execute("SELECT * FROM entries ORDER BY rowid")]
+        finally:
+            conn.close()
+        for row in kept:
+            self.assertIsNone(row.pop("deleted_at"))
+        self.assertEqual(json.loads(rules["ledger-rows"]), kept)
+        for number, key in json.loads(rules["number-keys"]):
+            self.assertEqual(key, calltally.number_key(number), repr(number))
 
-    def test_only_work_entries_and_never_the_words(self):
+    def test_same_second_counts_once(self):
+        rules = self.run_rules()
+        self.assertEqual(rules["same-second"], "true")
+        # Added once, then a repeat; an entry outside the limits is left out.
+        self.assertEqual(rules["same-second-added"], "1 1 1")
+
+    def test_record_tables_match_the_server(self):
+        rules = self.run_rules()
+        app = sqlite3.connect(Path(self.temp) / "app.db")
+        try:
+            for statement in json.loads(rules["sql-schema"]):
+                app.execute(statement)
+            server = sqlite3.connect(Path(self.temp) / "t.db")
+            try:
+                for table in ("entries",):
+                    self.assertEqual(app.execute(f"PRAGMA table_info({table})").fetchall(),
+                                     server.execute(f"PRAGMA table_info({table})").fetchall())
+                for index in ("entries_day", "entries_same"):
+                    self.assertEqual(app.execute(f"PRAGMA index_info({index})").fetchall(),
+                                     server.execute(f"PRAGMA index_info({index})").fetchall())
+            finally:
+                server.close()
+            self.assertEqual(dict(app.execute("SELECT key,value FROM settings")),
+                             {"pay_period_start": "2026-10-25", "pay_period_days": "14"})
+            self.assertEqual([r[1] for r in app.execute("PRAGMA table_info(people)")],
+                             ["key", "name", "ticked", "on_phone", "first_ticked_at"])
+            self.assertEqual([r[1] for r in app.execute("PRAGMA table_info(numbers)")], ["person_key", "number", "number_key"])
+        finally:
+            app.close()
+
+    def test_record_questions_answer_like_the_server(self):
+        rules = self.run_rules()
+        sent, group = self.fixture(rules)
+        self.store.add(sent + group)
+        self.store.add([
+            entry(duration_s=60),
+            entry(epoch=1793000100, at="2026-11-04 09:01:40", direction="missed", duration_s=12),
+            entry(epoch=1793000200, at="2026-11-04 09:03:20", kind="text", duration_s=0),
+            entry(epoch=1793000300, at="2026-11-04 10:00:00", direction="out", duration_s=0),
+            entry(epoch=1793000600, at="2026-11-04 12:00:00", contact="Gone-Work", number="5554445555", duration_s=900),
+            entry(epoch=1790000000, at="2026-10-01 06:00:00", contact="Sam-Work", number="5552223333", duration_s=1000),
+        ])
+        for r in self.store.day("2026-11-04")["entries"]:
+            if r["contact"] in ("Gone-Work", "Sam - Work"):
+                self.store.set_deleted(r["id"], True)
+        conn = sqlite3.connect(Path(self.temp) / "t.db")
+        conn.row_factory = sqlite3.Row
+        try:
+            for start, end in (("2026-10-01", "2026-10-31"), ("2026-11-01", "2026-11-30"), ("2026-11-04", "2026-11-04")):
+                days = {r["day"]: {k: r[k] for k in ("call_s", "calls", "unanswered", "texts", "ignored")}
+                        for r in conn.execute(rules["sql-days"], (start, end))}
+                server = self.store.range(start, end)["days"]
+                self.assertEqual(days, {d: {**{k: v for k, v in t.items() if k != "deleted"}, "ignored": t["deleted"]}
+                                        for d, t in server.items()})
+                self.assertEqual(dict(conn.execute(rules["sql-totals-range"], (start, end)).fetchone()), self.store.totals(start, end))
+                self.assertEqual([dict(r) for r in conn.execute(rules["sql-contacts-range"], (start, end))],
+                                 self.store.contacts(start, end)["contacts"])
+            self.assertEqual(dict(conn.execute(rules["sql-totals-all"]).fetchone()), self.store.totals())
+            self.assertEqual([dict(r) for r in conn.execute(rules["sql-contacts-all"])], self.store.contacts()["contacts"])
+            for day in ("2026-11-03", "2026-11-04", "2026-10-01"):
+                got = [dict(r) for r in conn.execute(rules["sql-day"], (day,))]
+                for r in got:
+                    r.pop("epoch")
+                self.assertEqual(got, self.store.day(day)["entries"])
+            self.assertEqual(conn.execute(rules["sql-earliest"]).fetchone()[0], "2026-10-01")
+            # Missed calls and ignored entries never add time; the day counts two connected calls before ignores.
+            nov4 = dict(conn.execute(rules["sql-days"], ("2026-11-04", "2026-11-04")).fetchone())
+            self.assertEqual(nov4, {"day": "2026-11-04", "call_s": 872 + 60, "calls": 2, "unanswered": 3, "texts": 5, "ignored": 2})
+        finally:
+            conn.close()
+
+    def test_only_ticked_entries_and_never_the_words(self):
         sent, group = self.fixture()
         for e in sent + group:
             self.assertEqual(set(e), {"kind", "at", "epoch", "contact", "number", "direction", "duration_s"})
@@ -520,27 +583,12 @@ class AndroidRulesTests(ServerCase):
         # The call log's 15551234567 matches the contact saved as +1 (555) 123-4567.
         self.assertEqual(sent[0]["contact"], "Dana-Work")
 
-    def test_full_upload_counts_connected_calls_and_delete_survives_the_next(self):
-        rules = self.run_rules()
-        status, result = self.post("/api/upload", None, raw=rules["fixture-body"].encode())
-        self.assertEqual((status, result), (200, {"received": 8, "added": 8}))
-        day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
-        self.assertEqual(day, {"call_s": 872 + 3968, "calls": 2, "unanswered": 1, "texts": 3, "deleted": 0})
-        rows = self.get("/api/day?day=2026-11-04")["entries"]
-        target = next(r for r in rows if r["direction"] == "out" and r["kind"] == "call")
-        self.post("/api/delete", {"id": target["id"]})
-        self.assertEqual(self.post("/api/upload", None, raw=rules["fixture-body"].encode())[1], {"received": 8, "added": 0})
-        day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
-        self.assertEqual((day["call_s"], day["deleted"]), (872, 1))
-        self.assertIsNotNone(next(r for r in self.get("/api/day?day=2026-11-04")["entries"] if r["id"] == target["id"])["deleted_at"])
-
     def test_rows_left_out_and_why(self):
         rules = self.run_rules()
         # Voicemail, blocked and answered elsewhere are another kind; missed and declined stay listed.
         self.assertEqual(rules["call-kinds"], "1=in 2=out 3=missed 4=skip:other-kind 5=rejected 6=skip:other-kind 7=skip:other-kind")
         self.assertEqual(rules["call-personal"], "skip:personal")
-        self.assertEqual((rules["renamed-call"], rules["renamed-text"]), ("skip:personal", "skip:personal"))
-        # Drafts (3), outbox (4), failed (5) and queued (6) messages are never sent.
+        # Drafts (3), outbox (4), failed (5) and queued (6) messages are never kept.
         self.assertEqual(rules["sms-boxes"], "1=in 2=out 3=skip:not-received-or-sent 4=skip:not-received-or-sent "
                                              "5=skip:not-received-or-sent 6=skip:not-received-or-sent")
         self.assertEqual(rules["sms-personal"], "skip:personal")
@@ -548,32 +596,31 @@ class AndroidRulesTests(ServerCase):
         self.assertEqual(rules["mms-kinds"], "-1=in 128=in 130=skip:not-a-message 132=in 134=skip:not-a-message "
                                              "135=skip:not-a-message 136=skip:not-a-message")
         self.assertEqual(rules["mms-unknown-thread"], "skip:people-unknown")
-        # A missed call keeps its ringing time in the upload, and the server never counts it.
+        # A missed call keeps its ringing time in the record, and it never counts.
         missed = json.loads(rules["call-missed"])
         self.assertEqual((missed["direction"], missed["duration_s"], missed["epoch"]), ("missed", 7, 1793000000))
-        self.assertEqual(self.post("/api/upload", {"entries": [missed]})[0], 200)
-        day = self.get(f"/api/range?from={missed['at'][:10]}&to={missed['at'][:10]}")["days"][missed["at"][:10]]
+        self.store.add([missed])
+        day = self.store.range(missed["at"][:10], missed["at"][:10])["days"][missed["at"][:10]]
         self.assertEqual((day["call_s"], day["calls"], day["unanswered"]), (0, 0, 1))
 
-    def test_same_second_counts_once(self):
+    def test_people_table(self):
         rules = self.run_rules()
-        self.assertEqual(rules["same-second"], "true true")
-        # Both go up in one run (2 fresh, 0 unusable); once one was sent neither goes again, and a bad entry is skipped.
-        self.assertEqual(rules["fresh"], "2 0 0 1")
-        self.assertEqual(self.post("/api/upload", None, raw=rules["same-second-body"].encode()), (200, {"received": 2, "added": 1}))
-
-    def test_batches_of_500(self):
-        rules = self.run_rules()
-        self.assertEqual(rules["batches"], "0=[0] 1=[1] 499=[499] 500=[500] 501=[500,1] 1000=[500,500] 1001=[500,500,1] "
-                                           "1201=[500,500,201]")
-        self.assertEqual(self.post("/api/upload", None, raw=rules["batch-body-1"].encode()), (200, {"received": 500, "added": 500}))
-        self.assertEqual(self.post("/api/upload", None, raw=rules["batch-body-2"].encode()), (200, {"received": 1, "added": 1}))
-        self.assertEqual(self.get("/api/totals")["calls"], 501)
+        # Every number of every ticked person, by its last ten digits; unticked people's numbers don't count.
+        self.assertEqual(rules["counting"], "{5550001111=Dana-Work, 5551234567=Dana-Work, 5554443333=Old Name, 5556667777=no digits}")
+        self.assertEqual(rules["counting-shared"], "{5551112222=On Phone}")
+        self.assertEqual(rules["fixture-work"], "{5550001111=Dana-Work, 5551234567=Dana-Work, 5552223333=Sam - Work}")
+        # An empty or failed read of the contacts changes nothing.
+        known = ("dana=Dana-Work[(555) 123-4567;+1 555 000 1111]+ticked+on gone=Old Name[5554443333]+ticked+off "
+                 "lee=Lee[555-777-0000]+unticked+on noname=[no digits;15556667777]+ticked+on")
+        self.assertEqual((rules["refresh-null"], rules["refresh-empty"]), (known, known))
+        # New names and numbers are taken, nothing is removed, ticks stay, and on_phone follows the read.
+        self.assertEqual(rules["refresh"], "dana=Dana New-Work[(555) 123-4567;+1 555 000 1111;555-888-9999]+ticked+on "
+                                           "gone=Old Name[5554443333]+ticked+on lee=Lee[555-777-0000]+unticked+off "
+                                           "noname=[no digits;15556667777]+ticked+off")
+        self.assertEqual(rules["join"], "[+1 555 123 4567, 555 000 1111]")
 
     def test_contacts_and_conversation_people(self):
         rules = self.run_rules()
-        # Every number on a -Work contact, by its last ten digits; a personal contact sharing a number doesn't take it.
-        self.assertEqual(rules["contacts"], "{5550001111=Dana-Work, 5551234567=Dana-Work, 5557770000=Kim -Work}")
         # A conversation with a recipient that can't be looked up, or none, is left out.
         self.assertEqual(rules["thread-people"], "{10=[+15551234567], 11=[+15551234567, 5559998888]}")
         # Without the list: the five newest messages of each conversation not already known.

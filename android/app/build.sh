@@ -1,17 +1,23 @@
 #!/bin/sh
 # Builds the app with the Android tools in ~/local/calltally-build. The signing key stays in that folder, out of git.
-#   CALLTALLY_SERVER=https://your-server sh android/app/build.sh
-# CALLTALLY_CLEARTEXT=true allows plain http, only for a test build on an emulator.
+#   sh android/app/build.sh
+# CALLTALLY_DEBUG=true makes a test build for the emulator: debuggable, with the test hook that ticks people by number.
+# Never for a release.
 set -e
-: "${CALLTALLY_SERVER:?Set CALLTALLY_SERVER to the server address}"
+DEBUG="${CALLTALLY_DEBUG:-false}"
+case "$DEBUG" in true|false) ;; *) echo "CALLTALLY_DEBUG must be true or false" >&2; exit 1 ;; esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 TOOLS="$HOME/local/calltally-build"
 export JAVA_HOME="$TOOLS/jdk" PATH="$TOOLS/jdk/bin:$PATH"
 SDK="$TOOLS/android-sdk"; BT="$SDK/build-tools/35.0.0"; JAR="$SDK/platforms/android-35/android.jar"
 WORK="$TOOLS/out/${CALLTALLY_OUT:-app}"; rm -rf "$WORK"; mkdir -p "$WORK/classes" "$WORK/gen/com/calltally/app"
 KEY="$TOOLS/calltally.keystore"; PASS="$TOOLS/keystore.pass"
-sed "s/__CLEARTEXT__/${CALLTALLY_CLEARTEXT:-false}/" "$HERE/AndroidManifest.template.xml" > "$WORK/AndroidManifest.xml"
-printf 'package com.calltally.app;\nfinal class Config {\n    static final String SERVER = "%s";\n}\n' "$CALLTALLY_SERVER" > "$WORK/gen/com/calltally/app/Config.java"
+HOOK=""
+if [ "$DEBUG" = true ]; then
+    HOOK='<receiver android:name=".TestHook" android:exported="true" android:permission="android.permission.DUMP"><intent-filter><action android:name="com.calltally.app.TEST_TICK" \/><\/intent-filter><\/receiver>'
+fi
+sed -e "s/__DEBUGGABLE__/$DEBUG/" -e "s/<!--TEST_HOOK-->/$HOOK/" "$HERE/AndroidManifest.template.xml" > "$WORK/AndroidManifest.xml"
+printf 'package com.calltally.app;\nfinal class Config {\n    static final boolean TEST_HOOK = %s;\n}\n' "$DEBUG" > "$WORK/gen/com/calltally/app/Config.java"
 "$BT/aapt2" compile --dir "$HERE/res" -o "$WORK/res.zip"
 "$BT/aapt2" link -o "$WORK/base.apk" -I "$JAR" --manifest "$WORK/AndroidManifest.xml" --min-sdk-version 26 --target-sdk-version 35 "$WORK/res.zip"
 javac -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$JAR" -d "$WORK/classes" $(find "$HERE/src" "$WORK/gen" -name '*.java')

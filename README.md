@@ -1,5 +1,7 @@
 # calltally
 
+The Android app is becoming a standalone app that keeps its own record on the phone; the server and page below are being retired.
+
 A private calendar of work calls and texts. It opens on the current month, with arrows to move between months. At the
 top are three totals of call time, calls and texts: the month on screen, the pay period, and all time. The pay period has
 its own arrows. Tap a total to see it by contact. Each day shows its exact

@@ -1,8 +1,5 @@
 package com.calltally.app;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,20 +13,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.regex.Pattern;
 
 /**
- * The rules for what counts and what gets uploaded. Plain Java with no Android parts, so it can be tested anywhere.
- * Collector reads the phone's tables into plain values and every decision about them is made here.
+ * The rules for what counts. Plain Java with no Android parts, so it can be tested anywhere. Collector reads the phone's
+ * tables into plain values and every decision about them is made here. Who counts comes from the people the user ticked.
  */
 final class Rules {
-    private static final Pattern WORK_NAME = Pattern.compile("-\\s*Work\\s*$");
     private static final int MAX_CONTACT = 190;
-    private static final int MAX_STATUS = 200;
-    // The start of the year 10000, past which the server can't read the time.
+    // The start of the year 10000, past which the clock text has more than four digits for the year.
     private static final long MAX_EPOCH = 253402300800L;
-    // At most this many entries per upload. The server takes up to 2000.
-    static final int BATCH = 500;
 
     // Android's call log types (CallLog.Calls), copied so these rules need no Android parts.
     static final int CALL_INCOMING = 1;
@@ -70,15 +62,88 @@ final class Rules {
         }
     }
 
-    /** One saved number of one contact. Only names ending in -Work count, matched by the last ten digits. */
-    static void addContact(Map<String, String> workNames, String name, String number) {
-        String key = numberKey(number);
-        if (!key.isEmpty() && isWork(name)) workNames.put(key, name.trim());
+    /**
+     * A contact on the phone, or a person in the people table. key is the phone's lookup key for the contact; numbers are
+     * as saved. ticked and onPhone only mean something for people in the table.
+     */
+    static final class Person {
+        final String key;
+        final String name;
+        final List<String> numbers;
+        final boolean ticked;
+        final boolean onPhone;
+
+        Person(String key, String name, List<String> numbers, boolean ticked, boolean onPhone) {
+            this.key = key;
+            this.name = name == null ? "" : name.trim();
+            this.numbers = numbers;
+            this.ticked = ticked;
+            this.onPhone = onPhone;
+        }
+
+        /** The name to show and count under: the contact's name, or its first number when it has none. */
+        String label() {
+            if (!name.isEmpty()) return name;
+            return numbers.isEmpty() ? key : numbers.get(0).trim();
+        }
     }
 
     /**
-     * One call log row. Only connected, missed and declined calls with a work contact are kept; missed and declined
-     * calls stay listed but the server never counts their time. Voicemail, blocked and answered elsewhere are another kind.
+     * The numbers that count, by their last ten digits, with the name each counts under: every number of every ticked
+     * person. People still on the phone come last so their names win when two people share a number.
+     */
+    static Map<String, String> countingNumbers(List<Person> people) {
+        Map<String, String> work = new HashMap<>();
+        for (boolean onPhone : new boolean[] {false, true}) {
+            for (Person person : people) {
+                if (!person.ticked || person.onPhone != onPhone) continue;
+                for (String number : person.numbers) {
+                    String key = numberKey(number);
+                    if (!key.isEmpty()) work.put(key, person.label());
+                }
+            }
+        }
+        return work;
+    }
+
+    /**
+     * The people table after a read of the phone's contacts. A person found on the phone takes its current name, gains
+     * any new numbers and is on the phone; one not found is no longer on the phone. Nothing is removed and ticks never
+     * change. An empty read (null or no contacts) changes nothing, since contacts can come back empty for a moment.
+     */
+    static List<Person> refreshPeople(List<Person> known, List<Person> phone) {
+        if (phone == null || phone.isEmpty()) return known;
+        Map<String, Person> byKey = new HashMap<>();
+        for (Person contact : phone) byKey.put(contact.key, contact);
+        List<Person> out = new ArrayList<>();
+        for (Person person : known) {
+            Person contact = byKey.get(person.key);
+            if (contact == null) {
+                out.add(new Person(person.key, person.name, person.numbers, person.ticked, false));
+                continue;
+            }
+            out.add(new Person(person.key, contact.name.isEmpty() ? person.name : contact.name,
+                joinNumbers(person.numbers, contact.numbers), person.ticked, true));
+        }
+        return out;
+    }
+
+    /** The first list, then each number of the second whose last ten digits aren't in it yet. Numbers without digits are left out. */
+    static List<String> joinNumbers(List<String> have, List<String> more) {
+        List<String> out = new ArrayList<>();
+        Set<String> keys = new HashSet<>();
+        for (List<String> list : Arrays.asList(have, more)) {
+            for (String number : list) {
+                String key = numberKey(number);
+                if (!key.isEmpty() && keys.add(key)) out.add(number.trim());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * One call log row. Only connected, missed and declined calls with a ticked person are kept; missed and declined
+     * calls stay listed but their time never counts. Voicemail, blocked and answered elsewhere are another kind.
      */
     static Decision call(Map<String, String> workNames, String number, long millis, int type, long seconds) {
         String name = workNames.get(numberKey(number));
@@ -195,7 +260,7 @@ final class Rules {
             return threadWho.get(thread);
         }
 
-        /** Group conversations with a work contact met so far. */
+        /** Group conversations with a ticked person met so far. */
         int groups() {
             int count = 0;
             for (Who who : threadWho.values()) {
@@ -205,54 +270,6 @@ final class Rules {
         }
     }
 
-    /** What one run sends: entries not sent before, and how many couldn't be used. */
-    static final class Fresh {
-        final List<Entry> entries = new ArrayList<>();
-        int unusable;
-    }
-
-    /**
-     * Leaves out entries already sent (by the hash of their key) and entries the server would refuse. Two messages in
-     * one conversation in the same direction and second have the same key and the same fields: both go up in one run,
-     * and the server keeps one, since its id is built from those fields.
-     */
-    static Fresh fresh(List<Entry> found, Set<String> sentHashes) {
-        Fresh out = new Fresh();
-        for (Entry entry : found) {
-            // One unusable record must not hold up everything after it.
-            if (!entry.acceptable()) out.unusable++;
-            else if (!sentHashes.contains(hash(entry.key()))) out.entries.add(entry);
-        }
-        return out;
-    }
-
-    /** Uploads of at most BATCH entries. Nothing to send still gives one empty upload, so the page sees the phone checked in. */
-    static List<List<Entry>> batches(List<Entry> entries) {
-        List<List<Entry>> out = new ArrayList<>();
-        int start = 0;
-        do {
-            out.add(entries.subList(start, Math.min(start + BATCH, entries.size())));
-            start += BATCH;
-        } while (start < entries.size());
-        return out;
-    }
-
-    /** What the app keeps to remember an entry was sent: the start of the SHA-256 of its key. */
-    static String hash(String text) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder out = new StringBuilder();
-            for (int i = 0; i < 16; i++) out.append(String.format(Locale.US, "%02x", digest[i]));
-            return out.toString();
-        } catch (NoSuchAlgorithmException error) {
-            throw new IllegalStateException(error);
-        }
-    }
-
-    static boolean isWork(String name) {
-        return name != null && WORK_NAME.matcher(name).find();
-    }
-
     /** The last ten digits, so +1 (555) 123-4567 and 5551234567 match. Empty if there are no digits. */
     static String numberKey(String number) {
         if (number == null) return "";
@@ -260,7 +277,7 @@ final class Rules {
         return digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
     }
 
-    /** Who a conversation is with, or null when it has no work contact. */
+    /** Who a conversation is with, or null when it has no ticked person. */
     static final class Who {
         final String contact;
         final String number;
@@ -272,8 +289,8 @@ final class Rules {
 
     /**
      * addresses: the people in a conversation. Phones differ on whether this holds your own number, so one extra address
-     * beside a single work contact counts as a chat with that contact. Calling it a group would give it a new identity and
-     * count its texts a second time. Personal contacts appear only as a count.
+     * beside a single ticked person counts as a chat with that person. Calling it a group would give it a new identity and
+     * count its texts a second time. Anyone not ticked appears only as a count.
      */
     static Who classify(long thread, List<String> addresses, Map<String, String> workNames) {
         Set<String> seen = new LinkedHashSet<>();
@@ -318,60 +335,24 @@ final class Rules {
         final long duration;
 
         Entry(String kind, long epoch, String contact, String number, String direction, long duration) {
+            this(kind, epoch, clockText(epoch), contact, number, direction, duration);
+        }
+
+        /** With a clock text of its own, for checks of the repeat rule. */
+        Entry(String kind, long epoch, String at, String contact, String number, String direction, long duration) {
             this.kind = kind;
             this.epoch = epoch;
-            this.at = clockText(epoch);
+            this.at = at;
             this.contact = contact;
             this.number = number;
             this.direction = direction;
             this.duration = duration;
         }
 
-        /** Same entry, same key. A new contact name changes it, so a rename reaches the server. */
-        String key() {
-            return kind + "|" + numberKey(number) + "|" + number.startsWith("thread-") + "|" + epoch + "|" + direction + "|" + contact;
-        }
-
-        /** The same limits the server applies. Anything outside them would make it refuse the whole batch. */
+        /** The limits the server applied, kept so the record holds only what the server would have taken. */
         boolean acceptable() {
             return epoch > 0 && epoch < MAX_EPOCH && !contact.trim().isEmpty() && contact.length() <= 200 && !number.trim().isEmpty()
                 && number.length() <= 60 && duration >= 0 && duration <= 7 * 86400L;
         }
-
-        String json() {
-            return "{\"kind\":" + quote(kind) + ",\"at\":" + quote(at) + ",\"epoch\":" + epoch + ",\"contact\":" + quote(contact)
-                + ",\"number\":" + quote(number) + ",\"direction\":" + quote(direction) + ",\"duration_s\":" + duration + "}";
-        }
-    }
-
-    static String body(List<Entry> entries) {
-        StringBuilder out = new StringBuilder("{\"entries\":[");
-        for (int i = 0; i < entries.size(); i++) {
-            if (i > 0) out.append(',');
-            out.append(entries.get(i).json());
-        }
-        return out.append("]}").toString();
-    }
-
-    /** The run's result for the page: one line, at most the server's 200 characters. Empty means the run was fine. */
-    static String statusBody(String text) {
-        String line = text == null ? "" : text.replaceAll("\\s+", " ").trim();
-        if (line.length() > MAX_STATUS) line = line.substring(0, MAX_STATUS);
-        return "{\"text\":" + quote(line) + "}";
-    }
-
-    static String quote(String text) {
-        StringBuilder out = new StringBuilder("\"");
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '"' || c == '\\') {
-                out.append('\\').append(c);
-            } else if (c < 0x20) {
-                out.append(String.format(Locale.US, "\\u%04x", (int) c));
-            } else {
-                out.append(c);
-            }
-        }
-        return out.append('"').toString();
     }
 }
