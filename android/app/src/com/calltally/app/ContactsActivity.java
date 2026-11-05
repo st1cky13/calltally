@@ -1,7 +1,6 @@
 package com.calltally.app;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -100,10 +99,9 @@ public class ContactsActivity extends Screen {
             info.addView(text(item.contact, 15, txt, true));
             info.addView(text(Words.plural(item.calls, "call") + " · " + Words.plural(item.texts, "text"), 13, muted, false));
             row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            TextView time = text(Words.fullTime(item.callS), 14, txt, false);
-            time.setTypeface(Typeface.MONOSPACE);
-            time.setSingleLine(true);
+            TextView time = text(Words.fullTime(item.callS), 15, txt, false);
             time.setPadding(dp(10), 0, 0, 0);
+            timeColumn(time);
             row.addView(time);
             rows.addView(row);
         }

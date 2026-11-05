@@ -2,7 +2,6 @@ package com.calltally.app;
 
 import android.content.Context;
 import android.graphics.Paint;
-import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -203,10 +202,9 @@ public class DayActivity extends Screen {
         info.addView(who);
         info.addView(what);
         row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView length = text(Words.connected(item.kind, item.direction, item.durationS) ? Words.fullTime(item.durationS) : "", 14, txt, false);
-        length.setTypeface(Typeface.MONOSPACE);
-        length.setSingleLine(true);
+        TextView length = text(Words.connected(item.kind, item.direction, item.durationS) ? Words.fullTime(item.durationS) : "", 15, txt, false);
         length.setPadding(dp(8), 0, dp(10), 0);
+        timeColumn(length);
         row.addView(length);
         if (gone) {
             for (TextView view : new TextView[] {who, what, length}) {

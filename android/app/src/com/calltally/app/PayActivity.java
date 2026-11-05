@@ -12,6 +12,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -38,8 +39,8 @@ public class PayActivity extends Screen {
     private boolean off;
     private TextView now;
     private TextView calTitle;
-    private Button calPrev;
-    private Button calNext;
+    private ImageButton calPrev;
+    private ImageButton calNext;
     private LinearLayout grid;
     private TextView review;
     private TextView preview;
@@ -75,8 +76,8 @@ public class PayActivity extends Screen {
 
         LinearLayout nav = row();
         nav.setGravity(Gravity.CENTER_VERTICAL);
-        calPrev = arrow("<", "Previous month", R.id.cal_prev);
-        calNext = arrow(">", "Next month", R.id.cal_next);
+        calPrev = arrow(R.drawable.chevron_left, "Previous month", R.id.cal_prev);
+        calNext = arrow(R.drawable.chevron_right, "Next month", R.id.cal_next);
         calTitle = text("", 17, txt, true);
         calTitle.setId(R.id.cal_title);
         calTitle.setGravity(Gravity.CENTER);
@@ -117,12 +118,14 @@ public class PayActivity extends Screen {
         column.addView(grid, wide());
         review = text("", 14, muted, false);
         review.setId(R.id.review);
+        figures(review);
         review.setVisibility(View.GONE);
         LinearLayout.LayoutParams reviewGap = wide();
         reviewGap.topMargin = dp(14);
         column.addView(review, reviewGap);
         preview = text("", 14, muted, false);
         preview.setId(R.id.period_preview);
+        figures(preview);
         preview.setVisibility(View.GONE);
         LinearLayout.LayoutParams previewGap = wide();
         previewGap.topMargin = dp(6);
@@ -223,16 +226,6 @@ public class PayActivity extends Screen {
         out.putBoolean("off", off);
         YearMonth shown = view != null ? view : keptView;
         if (shown != null) out.putString("calView", shown.toString());
-    }
-
-    private Button arrow(String label, String description, int id) {
-        Button button = button(label);
-        button.setId(id);
-        button.setContentDescription(description);
-        button.setTextSize(18);
-        button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        button.setPadding(0, 0, 0, 0);
-        return button;
     }
 
     private void load() {
@@ -361,11 +354,14 @@ public class PayActivity extends Screen {
         button.setMinHeight(dp(44));
         button.setMinimumHeight(dp(44));
         button.setContentDescription(Words.longDay(date));
-        // The first and last day are highlighted, the days between have a quiet tint; none after Reset.
+        figures(button);
+        // The first and last day are highlighted, the days between have a quiet tint, and the rest have no box; none
+        // after Reset.
         final LocalDate firstDay = shownFirst(), lastDay = shownLast();
         boolean isMarked = date.equals(firstDay) || date.equals(lastDay);
         if (isMarked) filled(button);
         else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x40000000, (accent & 0x00ffffff) | 0x80000000, 1, 8)));
+        else button.setBackground(clearTouch(8));
         button.setSelected(isMarked);
         button.setOnClickListener(new View.OnClickListener() {
             @Override

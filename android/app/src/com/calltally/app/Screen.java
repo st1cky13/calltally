@@ -225,7 +225,8 @@ abstract class Screen extends Activity {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setBackgroundColor(accent);
         header.setMinimumHeight(dp(56));
-        titleView = text(title, 18, ink, true);
+        titleView = text(title, 20, ink, false);
+        titleView.setTypeface(medium());
         titleView.setId(R.id.screen_title);
         header.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -243,7 +244,7 @@ abstract class Screen extends Activity {
             footer = footer(close);
         }
         if (footer != null) root.addView(footer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        header.setPadding(dp(16), dp(10), dp(8), dp(10));
+        header.setPadding(dp(16), dp(8), dp(8), dp(8));
         if (footer != null) footer.setPadding(dp(16), dp(10), dp(16), dp(10));
         insets();
         setContentView(root);
@@ -279,7 +280,7 @@ abstract class Screen extends Activity {
 
     /** Keeps the bar's text clear of the status bar and the bottom clear of the navigation bar. */
     private void insets() {
-        final int side = dp(16), top = dp(10), bottom = dp(10);
+        final int side = dp(16), top = dp(8), bottom = dp(10);
         final int bodyLeft = body.getPaddingLeft(), bodyTop = body.getPaddingTop(), bodyRight = body.getPaddingRight(), bodyBottom = body.getPaddingBottom();
         root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
@@ -309,6 +310,30 @@ abstract class Screen extends Activity {
         return view;
     }
 
+    /** The page's semi-bold, for titles and times. */
+    static Typeface medium() {
+        return Typeface.create("sans-serif-medium", Typeface.NORMAL);
+    }
+
+    /** Digits all the same width, so numbers line up and don't shift as they change. */
+    static void figures(TextView view) {
+        view.setFontFeatureSettings("tnum");
+    }
+
+    /**
+     * A call time at the end of a row: semi-bold, even digits, right-aligned and as wide as the longest time, so the
+     * times form a column. Set its padding first.
+     */
+    void timeColumn(TextView view) {
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        view.setTypeface(medium());
+        figures(view);
+        view.setGravity(Gravity.END);
+        view.setSingleLine(true);
+        int widest = (int) Math.ceil(view.getPaint().measureText("0h 00m 00s"));
+        view.setMinWidth(widest + view.getPaddingLeft() + view.getPaddingRight());
+    }
+
     GradientDrawable shape(int fill, int strokeColor, float strokeDp, float radiusDp) {
         GradientDrawable shape = new GradientDrawable();
         shape.setColor(fill);
@@ -321,6 +346,15 @@ abstract class Screen extends Activity {
     Drawable touchable(Drawable content) {
         int ripple = (accent & 0x00ffffff) | 0x33000000;
         return new RippleDrawable(ColorStateList.valueOf(ripple), content, null);
+    }
+
+    /**
+     * A touch for something with no background of its own. The ripple needs a solid mask: wrapped round a clear shape,
+     * as touchable() does, it would be masked by that shape and never show.
+     */
+    Drawable clearTouch(float radiusDp) {
+        int ripple = (accent & 0x00ffffff) | 0x33000000;
+        return new RippleDrawable(ColorStateList.valueOf(ripple), null, shape(0xffffffff, 0, 0, radiusDp));
     }
 
     /** The page's plain button: a soft grey with a thin line, 44dp tall. */
@@ -357,6 +391,20 @@ abstract class Screen extends Activity {
         button.setTextColor(txt);
         button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         button.setBackground(touchable(shape(card2, accent, 2, 8)));
+    }
+
+    /** A chevron in muted on a round touch, for moving between months and years. */
+    android.widget.ImageButton arrow(int drawable, String description, int id) {
+        android.widget.ImageButton button = new android.widget.ImageButton(this);
+        button.setId(id);
+        button.setContentDescription(description);
+        Drawable icon = getDrawable(drawable).mutate();
+        icon.setTint(muted);
+        button.setImageDrawable(icon);
+        button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        button.setBackground(clearTouch(24));
+        button.setPadding(0, 0, 0, 0);
+        return button;
     }
 
     static void enable(View view, boolean on) {

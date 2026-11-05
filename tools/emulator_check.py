@@ -1288,6 +1288,7 @@ def main():
         cells = [n.get("content-desc") for n in by_id(nodes, "day_cell")]
         check("the seeded month's total and its busy day match the reference", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
+        run.shot("10c-seeded-month")
 
         # Who counts: Dana, unticked and no longer on the phone, shows unticked; a search with letters looks up names only.
         run.sh("input", "keyevent", "KEYCODE_BACK")

@@ -54,15 +54,15 @@ public class MainActivity extends Screen {
     private TextView damaged;
     private TextView problem;
     private TextView empty;
-    private Button prev;
-    private Button next;
-    private Button now;
+    private ImageButton prev;
+    private ImageButton next;
+    private ImageButton now;
     private FitText title;
     private Button monthRow;
     private LinearLayout periodLine;
     private Button periodRow;
-    private Button periodPrev;
-    private Button periodNext;
+    private ImageButton periodPrev;
+    private ImageButton periodNext;
     private LinearLayout grid;
     private Button allRow;
     private final Map<String, LinearLayout> cells = new java.util.HashMap<>();
@@ -70,8 +70,8 @@ public class MainActivity extends Screen {
     private Dialog picker;
     private int pickYear;
     private TextView pickTitle;
-    private Button pickPrev;
-    private Button pickNext;
+    private ImageButton pickPrev;
+    private ImageButton pickNext;
     private final Button[] pickMonths = new Button[12];
 
     private final SharedPreferences.OnSharedPreferenceChangeListener runs = new SharedPreferences.OnSharedPreferenceChangeListener() {
@@ -174,13 +174,14 @@ public class MainActivity extends Screen {
 
         LinearLayout nav = row();
         nav.setGravity(Gravity.CENTER_VERTICAL);
-        prev = arrow("<", "Previous month", R.id.month_prev);
-        next = arrow(">", "Next month", R.id.month_next);
-        now = arrow(">>", "This month", R.id.month_now);
+        prev = arrow(R.drawable.chevron_left, "Previous month", R.id.month_prev);
+        next = arrow(R.drawable.chevron_right, "Next month", R.id.month_next);
+        now = arrow(R.drawable.chevron_double, "This month", R.id.month_now);
         // The month's name shrinks to one line on a narrow phone, and a tap on it picks a month.
-        title = new FitText(this, 17);
+        title = new FitText(this, 20);
         title.setTextColor(txt);
-        title.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        title.setTypeface(medium());
+        figures(title);
         title.setId(R.id.month_title);
         title.setGravity(Gravity.CENTER);
         title.setPadding(dp(6), 0, dp(6), 0);
@@ -232,8 +233,8 @@ public class MainActivity extends Screen {
         });
 
         periodLine = row();
-        periodPrev = arrow("<", "Previous pay period", R.id.period_prev);
-        periodNext = arrow(">", "Next pay period", R.id.period_next);
+        periodPrev = arrow(R.drawable.chevron_left, "Previous pay period", R.id.period_prev);
+        periodNext = arrow(R.drawable.chevron_right, "Next pay period", R.id.period_next);
         periodRow = totalRow(R.id.total_period);
         periodLine.addView(periodPrev, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
         LinearLayout.LayoutParams middle = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
@@ -294,11 +295,18 @@ public class MainActivity extends Screen {
         scroll.addView(column, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         frame("Call Tally", scroll, false);
 
-        updated = text("", 14, ink, false);
+        // The title over a quiet line saying when the phone was last read.
+        header.removeView(titleView);
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        heading.addView(titleView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        updated = text("", 12, ink, false);
         updated.setId(R.id.updated);
         updated.setSingleLine(true);
-        updated.setPadding(dp(10), dp(2), dp(10), dp(2));
-        header.addView(updated, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams updatedGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        updatedGap.topMargin = dp(1);
+        heading.addView(updated, updatedGap);
+        header.addView(heading, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         ImageButton gear = new ImageButton(this);
         gear.setId(R.id.gear);
         gear.setContentDescription("Options");
@@ -336,16 +344,6 @@ public class MainActivity extends Screen {
         intent.putExtra("view", view.toString()).putExtra("periodFollow", periodFollow).putExtra("periodK", periodK);
     }
 
-    private Button arrow(String label, String description, int id) {
-        Button button = button(label);
-        button.setId(id);
-        button.setContentDescription(description);
-        button.setTextSize(18);
-        button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        button.setPadding(0, 0, 0, 0);
-        return button;
-    }
-
     /** A totals row: a small label, then the call time in bold, the calls and the texts. */
     private Button totalRow(int id) {
         Button row = new Button(this);
@@ -362,6 +360,7 @@ public class MainActivity extends Screen {
         row.setTextColor(muted);
         row.setLineSpacing(0, 1.1f);
         row.setBackground(touchable(shape(tint, line2, 1, 8)));
+        figures(row);
         return row;
     }
 
@@ -514,6 +513,7 @@ public class MainActivity extends Screen {
         FitText time = new FitText(this, 14);
         time.setTextColor(txt);
         time.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        figures(time);
         TextView texts = text("", 12, muted, false);
         texts.setLineSpacing(0, 0.95f);
         cell.addView(number, wide());
@@ -534,12 +534,14 @@ public class MainActivity extends Screen {
         TextView texts = (TextView) cell.getChildAt(2);
         boolean used = data != null && data.calls + data.unanswered + data.texts + data.ignored > 0;
         boolean isToday = date.equals(today);
-        cell.setBackground(isToday ? touchable(shape(used ? tint : card2, accent, 2, 8))
-            : used ? touchable(shape(tint, line2, 1, 8)) : shape(card2, card2, 0, 8));
+        // Only a day with something gets a tile; today keeps its ring. A day still to come has its number paler.
+        int busy = (accent & 0x00ffffff) | (night() ? 0x33000000 : 0x22000000);
+        cell.setBackground(isToday ? touchable(shape(used ? busy : 0, accent, 2, 8)) : used ? touchable(shape(busy, 0, 0, 8)) : null);
         cell.setClickable(used);
         cell.setEnabled(used);
-        cell.setAlpha(used || isToday ? 1f : date.isAfter(today) ? 0.45f : 0.6f);
-        number.setTextColor(isToday ? accent : muted);
+        int faint = (muted & 0x00ffffff) | 0x80000000;
+        number.setTextColor(isToday ? accent : !used && date.isAfter(today) ? faint : muted);
+        number.setTextSize(used || isToday ? 13 : 12);
         number.setTypeface(isToday ? Typeface.create(Typeface.DEFAULT, Typeface.BOLD) : Typeface.DEFAULT);
         StringBuilder words = new StringBuilder(Words.monthName(date.getMonthValue()) + " " + date.getDayOfMonth());
         if (data != null && data.calls > 0) {
@@ -604,8 +606,8 @@ public class MainActivity extends Screen {
 
         LinearLayout top = row();
         top.setGravity(Gravity.CENTER_VERTICAL);
-        pickPrev = arrow("<", "Previous year", R.id.pick_prev);
-        pickNext = arrow(">", "Next year", R.id.pick_next);
+        pickPrev = arrow(R.drawable.chevron_left, "Previous year", R.id.pick_prev);
+        pickNext = arrow(R.drawable.chevron_right, "Next year", R.id.pick_next);
         pickTitle = text("", 17, txt, true);
         pickTitle.setId(R.id.pick_year);
         pickTitle.setGravity(Gravity.CENTER);
@@ -716,10 +718,12 @@ public class MainActivity extends Screen {
         int stale = Words.staleness(last, now);
         if (stale == 0) {
             updated.setBackground(null);
-            updated.setTextColor(ink);
+            updated.setPadding(0, 0, 0, 0);
+            updated.setTextColor((ink & 0x00ffffff) | 0xD9000000);
             updated.setTypeface(Typeface.DEFAULT);
         } else {
-            updated.setBackground(shape(stale == 2 ? 0xffc23a3a : 0xfff3c25a, 0, 0, 20));
+            updated.setBackground(shape(stale == 2 ? 0xffc23a3a : 0xfff3c25a, 0, 0, 10));
+            updated.setPadding(dp(8), dp(2), dp(8), dp(2));
             updated.setTextColor(stale == 2 ? 0xffffffff : 0xff2b1d00);
             updated.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         }
