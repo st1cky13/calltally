@@ -4,6 +4,8 @@ set -e
 BASE="__BASE_URL__"
 DIR="$HOME/.calltally"
 
+# Upgrade first: on a fresh Termux, installing alone can update curl without the OpenSSL it needs, which breaks curl.
+pkg upgrade -y </dev/null
 pkg install -y python termux-api curl </dev/null
 mkdir -p "$DIR"
 curl -fsSL "$BASE/phone/calltally-phone.py" -o "$DIR/calltally-phone.py"
