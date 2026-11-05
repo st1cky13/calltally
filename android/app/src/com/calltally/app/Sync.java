@@ -79,15 +79,20 @@ final class Sync {
 
         @Override
         public void uncaughtException(Thread thread, Throwable error) {
-            String where = "";
-            for (StackTraceElement frame : error.getStackTrace()) {
-                if (frame.getClassName().startsWith("com.calltally.app")) {
-                    where = " at " + frame.getFileName() + ":" + frame.getLineNumber();
-                    break;
+            try {
+                String where = "";
+                for (StackTraceElement frame : error.getStackTrace()) {
+                    if (frame.getClassName().startsWith("com.calltally.app")) {
+                        where = " at " + frame.getFileName() + ":" + frame.getLineNumber();
+                        break;
+                    }
                 }
+                prefs(context).edit().putString("crash", error.getClass().getSimpleName() + where).commit();
+            } catch (Throwable ignored) {
+                // Saving the reason must never get in the way of the normal crash.
+            } finally {
+                if (previous != null) previous.uncaughtException(thread, error);
             }
-            prefs(context).edit().putString("crash", error.getClass().getSimpleName() + where).commit();
-            if (previous != null) previous.uncaughtException(thread, error);
         }
     }
 
@@ -108,7 +113,7 @@ final class Sync {
                 jobs.schedule(new JobInfo.Builder(JOB_PERIODIC, service).setPeriodic(PERIOD_MS).setPersisted(true)
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).build());
             }
-            if (jobs.getPendingJob(JOB_CHANGES) == null) scheduleChanges(context);
+            if (jobs.getPendingJob(JOB_CHANGES) == null) changesJob(context);
             prefs(context).edit().remove("schedule_problem").apply();
         } catch (RuntimeException error) {
             // Uploading by hand still works, so this shows on the screen rather than closing the app.
@@ -118,16 +123,21 @@ final class Sync {
 
     /** Wakes soon after a call or message is saved. Android runs this once per schedule, so each run sets up the next. */
     static void scheduleChanges(Context context) {
+        try {
+            changesJob(context);
+            prefs(context).edit().remove("schedule_problem").apply();
+        } catch (RuntimeException error) {
+            prefs(context).edit().putString("schedule_problem", error.getClass().getSimpleName()).apply();
+        }
+    }
+
+    private static void changesJob(Context context) {
         JobInfo.Builder job = new JobInfo.Builder(JOB_CHANGES, new ComponentName(context, SyncJob.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setTriggerContentUpdateDelay(10000).setTriggerContentMaxDelay(60000);
         for (Uri uri : new Uri[] {CallLog.Calls.CONTENT_URI, Uri.parse("content://sms"), Uri.parse("content://mms"), Uri.parse("content://mms-sms")}) {
             job.addTriggerContentUri(new JobInfo.TriggerContentUri(uri, JobInfo.TriggerContentUri.FLAG_NOTIFY_FOR_DESCENDANTS));
         }
-        try {
-            context.getSystemService(JobScheduler.class).schedule(job.build());
-        } catch (RuntimeException error) {
-            prefs(context).edit().putString("schedule_problem", error.getClass().getSimpleName()).apply();
-        }
+        context.getSystemService(JobScheduler.class).schedule(job.build());
     }
 
     /** The server said no, or couldn't be reached. Kept apart from a problem with this phone's own files. */
