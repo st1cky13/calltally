@@ -64,4 +64,7 @@
     <item type="id" name="period_preview" />
     <item type="id" name="damaged" />
     <item type="id" name="damaged_ok" />
+    <item type="id" name="phone_check" />
+    <item type="id" name="phone_share" />
+    <item type="id" name="phone_row" />
 </resources>

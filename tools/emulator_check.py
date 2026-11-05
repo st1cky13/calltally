@@ -8,7 +8,8 @@ period row. It sets the pay period through the test hook and turns it off again 
 sets it again, ticks Dana-Work and Sam - Work through it, runs the app and copies its record
 off the emulator to check it with sqlite3 against what calltally.py would have kept. Then it unticks Dana, ticks her again
 and deletes her contact, checking that nothing is ever lost, ticks Mom to check that conversations keep their identity,
-and takes the app's permissions away. Last it opens the month screen and reads it with uiautomator: the title, the three
+and takes the app's permissions away. After the first run it also opens Options > Phone check and reads its rows: the
+top line, the seeded chats and the newest messages with how each counts. Last it opens the month screen and reads it with uiautomator: the title, the three
 totals rows and the grid, counted as calltally.py counts the record, with every button at least 40dp tall; then Who
 counts with its ticks and search; then a damaged record, which must be moved aside, with an OK that clears the note.
 Last, an update over what the uploading app (0.6.0) leaves: a fresh install given its sent.txt and its last run's words by
@@ -316,6 +317,13 @@ class Run:
         if not found:
             raise RuntimeError(f"nothing reads {text!r} on the screen")
         self.tap(found[0])
+
+    def swipe_up(self):
+        """Scrolls the screen's middle up by about half a screen."""
+        size = self.adb("shell", "wm", "size").strip().splitlines()[-1].split(":")[-1].strip()
+        width, height = (int(v) for v in size.split("x"))
+        self.sh("input", "swipe", width // 2, height * 3 // 4, width // 2, height // 4, 400)
+        time.sleep(1)
 
     def tap(self, node):
         (left, top), (right, bottom) = bounds(node)
@@ -689,6 +697,55 @@ def main():
         # Scheduling the periodic job can start a second run at once, which finds the same and adds nothing new.
         check("the run's status is clean", f"{len(want)} calls and texts with 2 ticked people found, " in status
               and " new in the record." in status and "couldn't" not in status and "wrong" not in status, status)
+
+        # Phone check, with Dana and Sam ticked: Options > Phone check lists the chats and the newest rows of both message
+        # tables as the phone hands them over, with how the app would count each, and has Share and Close.
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "gear")), 30)
+        run.tap(by_id(nodes, "gear")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "who_open")), 30)
+        for _ in range(8):
+            if by_id(nodes, "phone_check"):
+                break
+            run.swipe_up()
+            nodes = run.nodes()
+        run.tap(by_id(nodes, "phone_check")[0])
+        nodes = run.wait_for(lambda ns: any((n.get("text") or "").startswith("Android ") for n in by_id(ns, "phone_row")), 40)
+        run.shot("07-phone-check")
+        phone_nodes = nodes
+        seen, small, outside = [], [], []
+        for turn in range(20):
+            fresh = [n.get("text") or "" for n in by_id(nodes, "phone_row") if (n.get("text") or "") not in seen]
+            seen += fresh
+            tiny, past = screen_problems(nodes, density)
+            small, outside = small + tiny, outside + past
+            if turn > 0 and not fresh:
+                break
+            run.swipe_up()
+            nodes = run.nodes()
+        run.shot("08-phone-check-end")
+        plumbing_thread = run.thread_for(PLUMBING)
+        check("Phone check's top line names Android and the default messaging app",
+              any(t.startswith("Android ") and ", default messaging app " in t for t in seen), str(seen[:1]))
+        check("Phone check lists the seeded group chat with Dana-Work and the plumbing chat",
+              ("group" not in groups or any(t.startswith(f"chat {groups['group']} · ") and "Dana-Work" in t for t in seen))
+              and any(t.startswith(f"chat {plumbing_thread} · ") and PLUMBING in t for t in seen),
+              str([t for t in seen if t.startswith("chat ")][:6]))
+        check("Phone check shows Dana's text counting under Dana-Work and the plumbing text skipped",
+              any(" · received · text row · " in t and f"address {DANA1} " in t and "counts under Dana-Work" in t for t in seen)
+              and any(" · text row · " in t and f"address {PLUMBING} " in t and "skipped: " in t for t in seen),
+              str([t for t in seen if "text row" in t][:4]))
+        check("Phone check has Share and Close, says it reads numbers only, and nothing reaches past the screen",
+              bool(by_id(phone_nodes, "phone_share")) and bool(by_id(phone_nodes, "close"))
+              and any("never reads what a message says" in (n.get("text") or "") for n in phone_nodes) and not small and not outside,
+              f"small {small[:3]} outside {outside[:3]}")
+        crashes = run.adb("logcat", "-d", "-b", "crash", check=False)
+        check("Phone check opened without a crash", APP not in crashes, crashes.strip()[-400:])
+        (out / "phone-check.txt").write_text("\n".join(seen) + "\n")
+        run.sh("input", "keyevent", "KEYCODE_BACK")
+        time.sleep(1)
+        run.sh("input", "keyevent", "KEYCODE_BACK")
+        time.sleep(1)
 
         # Run 2: Dana unticked, and a new call from her. Nothing goes and nothing of hers comes in.
         answer = run.tick([DANA1], untick=True)

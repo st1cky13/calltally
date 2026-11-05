@@ -21,7 +21,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import java.time.LocalDate;
 
-/** Options: Who counts, the pay period, hiding ignored entries, the look, the last run, and the first-start page. Saved in the record. */
+/** Options: Who counts, the pay period, hiding ignored entries, the look, the last run, the phone check and the first-start page. Saved in the record. */
 public class OptionsActivity extends Screen {
     private static final int[] THEME_COLORS = {R.color.teal_accent, R.color.blue_accent, R.color.plum_accent, R.color.amber_accent, R.color.slate_accent};
     private static final int[] THEME_IDS = {R.id.theme_teal, R.id.theme_blue, R.id.theme_plum, R.id.theme_amber, R.id.theme_slate};
@@ -160,6 +160,18 @@ public class OptionsActivity extends Screen {
             }
         });
         column.addView(runNow, resetGap);
+
+        heading("Phone check");
+        TextView phoneLine = muted("See what the phone hands the app.");
+        Button phoneOpen = button("Open");
+        phoneOpen.setId(R.id.phone_check);
+        phoneOpen.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(OptionsActivity.this, PhoneCheckActivity.class));
+            }
+        });
+        pair(phoneLine, phoneOpen);
 
         heading("First start");
         Button again = button("Show the first-start page again");
