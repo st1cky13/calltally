@@ -6,15 +6,19 @@ its own arrows, and the day pay periods start can be changed. Tap a total to see
 call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted entries
 stay deleted and can be restored.
 
-An Android app finds calls and texts with contacts whose name ends in `-Work` and uploads them soon after they happen, and
-about every 15 minutes in case one is missed, including history already on the phone. It uploads the time, contact, number,
-direction and call length, and a short line saying whether its last run went well. It never reads what a text said or
-uploads anything about other contacts, except that a group with a work contact shows how many other people are in it.
+The Android app is how uploads happen. It finds calls and texts with contacts whose name ends in `-Work` and uploads them
+soon after they happen, and about every 15 minutes in case one is missed, including history already on the phone. It
+uploads the time, contact, number, direction and call length, and a short line saying whether its last run went well. It
+never reads what a text said or uploads anything about other contacts, except that a group with a work contact shows how
+many other people are in it.
 
 ## Server
 
 Python 3.11 or newer, standard library only. See `deploy/calltally.service`. The page has no login: keep it on a private
 network such as Tailscale and never give it a public address.
+
+To check an install changed nothing, run `python3 tools/totals.py data/calltally.db` before and after and compare the
+two outputs with `diff`.
 
 ## Phone
 
@@ -29,8 +33,6 @@ The page's "Updated" label turns yellow if the phone hasn't uploaded for three h
 phone has a problem, such as texts it can't read, the page shows it in one line under the header, and calls still upload.
 That line holds no names, numbers or counts. The app's screen shows the last result in full, including how many work
 calls it skipped for being another kind, such as voicemail.
-
-Termux and `phone/calltally-phone.py` are the older way to upload. Entries match, so moving between them adds no copies.
 
 ## What counts
 

@@ -1,15 +1,13 @@
-"""Run with: python -m unittest discover -s tests (from the repo). Uses fake termux commands and a real local server."""
-import importlib.util
+"""Run with: python -m unittest discover -s tests (from the repo). Uses a real local server and, when the build tools
+are present, the Android app's rules on a real JVM."""
 import json
 import os
 import shutil
 import sqlite3
-import stat
 import subprocess
 import sys
 import tempfile
 import threading
-import time
 import unittest
 import unittest.mock
 import urllib.error
@@ -21,35 +19,24 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import calltally  # noqa: E402
 
-PHONE_SCRIPT = ROOT / "phone" / "calltally-phone.py"
-spec = importlib.util.spec_from_file_location("calltally_phone", PHONE_SCRIPT)
-phone = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(phone)
-
 SECRET_WORDS = "the secret words of a text"
-CONTACTS = [
-    {"name": "Dana-Work", "number": "+1 (555) 123-4567"},
-    {"name": "Sam - Work", "number": "555-222-3333"},
-    {"name": "Mom", "number": "5559998888"},
-    {"name": "Work Plumbing", "number": "5557776666"},
+# What the old Termux script uploaded for its test calls and texts, recorded by running it once on 2026-11-04 before it
+# was retired (see ~/local/archive/calltally-termux). Rows like these are in the live database. The app must give the
+# same entry id for the same call or text, or a re-upload would add them twice.
+TERMUX_UPLOAD = [
+    ("9454935875ececdb4b48b590af16afab", {"kind": "call", "at": "2026-11-03 10:00:00", "epoch": 1793728800, "contact": "Dana-Work", "number": "5550001111", "direction": "out", "duration_s": 120}),
+    ("0931a9b5fd4ddbc6280df13036f2ad7c", {"kind": "text", "at": "2026-11-03 10:05:00", "epoch": 1793729100, "contact": "Dana-Work", "number": "5550001111", "direction": "out", "duration_s": 0}),
+    ("37146c6b6951da96f67ee3da54709b03", {"kind": "call", "at": "2026-11-04 09:12:00", "epoch": 1793812320, "contact": "Dana-Work", "number": "15551234567", "direction": "in", "duration_s": 872}),
+    ("48dde50e35c1b79d8b24c47478df58b2", {"kind": "text", "at": "2026-11-04 09:40:00", "epoch": 1793814000, "contact": "Dana-Work", "number": "+15551234567", "direction": "in", "duration_s": 0}),
+    ("deab11e0efda6505a9ca797a44306884", {"kind": "text", "at": "2026-11-04 09:41:00", "epoch": 1793814060, "contact": "Dana-Work", "number": "+15551234567", "direction": "out", "duration_s": 0}),
+    ("2f92856e0196f426999b1b708834bfc3", {"kind": "call", "at": "2026-11-04 13:05:00", "epoch": 1793826300, "contact": "Sam - Work", "number": "5552223333", "direction": "out", "duration_s": 3968}),
+    ("e9991aba09467e3768bb7281a02f41bd", {"kind": "call", "at": "2026-11-04 15:00:00", "epoch": 1793833200, "contact": "Dana-Work", "number": "5551234567", "direction": "missed", "duration_s": 0}),
+    # A group message: the script saw only the sender's number, so it uploaded it as a text from Dana.
+    ("9933ae32592a2c37b7b36f09288f743e", {"kind": "text", "at": "2026-11-04 16:00:00", "epoch": 1793836800, "contact": "Dana-Work", "number": "+15551234567", "direction": "in", "duration_s": 0}),
 ]
-CALLS = [
-    {"name": "Dana-Work", "phone_number": "15551234567", "type": "INCOMING", "date": "2026-11-04 09:12:00", "duration": "14:32", "sim_id": "1"},
-    {"name": "UNKNOWN_CALLER", "phone_number": "5552223333", "type": "OUTGOING", "date": "2026-11-04 13:05:00", "duration": "01:06:08", "sim_id": "1"},
-    {"name": "Dana-Work", "phone_number": "5551234567", "type": "MISSED", "date": "2026-11-04 15:00:00", "duration": "00:00", "sim_id": "1"},
-    {"name": "Dana-Work", "phone_number": "5551234567", "type": "BLOCKED", "date": "2026-11-04 15:01:00", "duration": "00:00", "sim_id": "1"},
-    {"name": "Mom", "phone_number": "5559998888", "type": "INCOMING", "date": "2026-11-04 18:00:00", "duration": "30:00", "sim_id": "1"},
-    {"name": "Work Plumbing", "phone_number": "5557776666", "type": "OUTGOING", "date": "2026-11-04 18:30:00", "duration": "03:00", "sim_id": "1"},
-    # A second number for a work contact: the contact list doesn't show it, but the name on the call does.
-    {"name": "Dana-Work", "phone_number": "5550001111", "type": "OUTGOING", "date": "2026-11-03 10:00:00", "duration": "02:00", "sim_id": "1"},
-]
-TEXTS = [
-    {"threadid": 1, "type": "inbox", "read": True, "sender": "Dana-Work", "address": "+15551234567", "number": "+15551234567", "received": "2026-11-04 09:40:00", "body": SECRET_WORDS, "_id": 1},
-    {"threadid": 1, "type": "sent", "read": True, "sender": "You", "address": "+15551234567", "number": "+15551234567", "received": "2026-11-04 09:41:00", "body": SECRET_WORDS, "_id": 2},
-    {"threadid": 2, "type": "inbox", "read": True, "sender": "Mom", "address": "5559998888", "number": "5559998888", "received": "2026-11-04 12:00:00", "body": SECRET_WORDS, "_id": 3},
-    {"threadid": 1, "type": "draft", "read": True, "sender": "You", "address": "+15551234567", "number": "+15551234567", "received": "2026-11-04 12:30:00", "body": SECRET_WORDS, "_id": 4},
-    {"threadid": 3, "type": "sent", "read": True, "sender": "You", "address": "5550001111", "number": "5550001111", "received": "2026-11-03 10:05:00", "body": SECRET_WORDS, "_id": 5},
-]
+TERMUX_IDS = {key for key, _ in TERMUX_UPLOAD}
+# The same message as the app sends it from a group with three other people: known by its conversation, so a new id.
+APP_GROUP_ID = "2f807a60727693bb6c98bc098b86a193"
 
 
 def entry(**changes):
@@ -238,12 +225,14 @@ class StoreTests(ServerCase):
                 self.assertEqual(reply.headers.get_content_type(), "application/vnd.android.package-archive")
                 self.assertEqual(reply.read(), b"PK-test")
 
-    def test_page_and_setup_are_served(self):
+    def test_page_is_served_and_the_termux_files_are_gone(self):
         with urllib.request.urlopen(self.base + "/") as reply:
             self.assertIn(b"Call Tally", reply.read())
-        request = urllib.request.Request(self.base + "/phone/setup.sh", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "box.test:8444"})
-        with urllib.request.urlopen(request) as reply:
-            self.assertIn(b'BASE="https://box.test:8444"', reply.read())
+        for path in ("/phone/setup.sh", "/phone/calltally-phone.py"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(self.base + path)
+            self.assertEqual(caught.exception.code, 404, path)
+            caught.exception.close()
 
 
 class TotalsTests(ServerCase):
@@ -349,7 +338,7 @@ class SettingsTests(ServerCase):
         self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
 
     def test_health_reports_version(self):
-        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.4.0"})
+        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.5.0"})
 
 
 class StatusTests(ServerCase):
@@ -436,8 +425,11 @@ class AndroidRulesTests(ServerCase):
         self.assertEqual(rules["two-work"], 'Group: Dana-Work, Sam "Q" - Work | thread-4')
         self.assertEqual(rules["one-extra"], "Dana-Work | 5551234567")
         self.assertEqual(rules["names"], "truetruefalsefalsefalse")
+        self.assertEqual(rules["names-more"], "truetruefalsefalsefalse")
         self.assertEqual(rules["acceptable"], "falsefalsefalsetrue")
         self.assertEqual(rules["seconds"], "1793000000 1793000000 1793000000")
+        # Bob-Work renamed to Bob: his number stops being a work number, so nothing of his is uploaded.
+        self.assertEqual(rules["renamed"], "none")
 
     def test_status_line_is_one_line_and_accepted(self):
         rules = self.run_rules()
@@ -468,102 +460,114 @@ class AndroidRulesTests(ServerCase):
         self.assertTrue(any(r["contact"] == 'Sam "Q" - Work' and r["number"] == "thread-4" for r in rows))
 
 
-class PhoneTests(ServerCase):
+    def fixture(self, rules=None):
+        rules = rules or self.run_rules()
+        return json.loads(rules["fixture-body"])["entries"], json.loads(rules["fixture-group"])["entries"]
+
+    def test_app_gives_the_ids_the_termux_script_gave(self):
+        sent, group = self.fixture()
+        ids = [calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in sent]
+        self.assertEqual(sorted(ids), sorted(TERMUX_IDS))
+        by_id = dict(TERMUX_UPLOAD)
+        for key, e in zip(ids, sent):
+            # Same moment and clock time too, so the server's second check for a repeat also matches.
+            self.assertEqual((e["at"], e["epoch"], e["direction"]), (by_id[key]["at"], by_id[key]["epoch"], by_id[key]["direction"]))
+        # A group of three or more is known by its conversation, so it can't match what the script sent for it.
+        self.assertEqual([calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in group], [APP_GROUP_ID])
+        self.assertNotIn(APP_GROUP_ID, TERMUX_IDS)
+
+    def test_app_upload_adds_nothing_over_termux_rows(self):
+        rules = self.run_rules()
+        self.post("/api/upload", {"entries": [e for _, e in TERMUX_UPLOAD]})
+        status, result = self.post("/api/upload", None, raw=rules["fixture-body"].encode())
+        self.assertEqual((status, result), (200, {"received": 8, "added": 0}))
+        status, result = self.post("/api/upload", None, raw=rules["fixture-group"].encode())
+        self.assertEqual((status, result), (200, {"received": 1, "added": 1}))
+        ids = {r["id"] for day in ("2026-11-03", "2026-11-04") for r in self.get(f"/api/day?day={day}")["entries"]}
+        self.assertEqual(ids, TERMUX_IDS | {APP_GROUP_ID})
+
     def test_only_work_entries_and_never_the_words(self):
-        entries = phone.build_entries(CONTACTS, CALLS, TEXTS)
-        blob = json.dumps(entries)
-        self.assertNotIn(SECRET_WORDS, blob)
-        self.assertNotIn("Mom", blob)
-        self.assertNotIn("Plumbing", blob)
-        self.assertNotIn("body", blob)
-        self.assertEqual(sum(e["kind"] == "call" for e in entries), 4)
-        self.assertEqual(sum(e["kind"] == "text" for e in entries), 3)
+        sent, group = self.fixture()
+        for e in sent + group:
+            self.assertEqual(set(e), {"kind", "at", "epoch", "contact", "number", "direction", "duration_s"})
+        blob = json.dumps(sent + group)
+        for personal in ("Mom", "Plumbing", "5559998888", "5557776666", "body", SECRET_WORDS):
+            self.assertNotIn(personal, blob)
+        self.assertEqual((sum(e["kind"] == "call" for e in sent), sum(e["kind"] == "text" for e in sent)), (4, 4))
+        # The call log's 15551234567 matches the contact saved as +1 (555) 123-4567.
+        self.assertEqual(sent[0]["contact"], "Dana-Work")
 
-    def test_renamed_contact_stops_uploading(self):
-        calls = [{"name": "Bob-Work", "phone_number": "5554443333", "type": "INCOMING", "date": "2026-11-04 09:00:00", "duration": "01:00"}]
-        self.assertEqual(phone.build_entries([{"name": "Bob", "number": "5554443333"}], calls, []), [])
-        texts = [{"type": "inbox", "sender": "Bob", "address": "5554443333", "received": "2026-11-04 09:00:00", "body": "x"}]
-        self.assertEqual(phone.build_entries([], calls, texts), [])
-
-    def test_sender_that_is_only_a_number_is_not_a_current_name(self):
-        calls = [{"name": "Dana-Work", "phone_number": "5550001111", "type": "OUTGOING", "date": "2026-11-04 09:00:00", "duration": "01:00"}]
-        for sender in ("+15550001111", "", " "):
-            texts = [{"type": "inbox", "sender": sender, "address": "5550001111", "received": "2026-11-04 09:05:00", "body": "x"}]
-            self.assertEqual(len(phone.build_entries([], calls, texts)), 2, sender)
-
-    def test_sent_text_name_you_is_not_a_current_name(self):
-        calls = [{"name": "Dana-Work", "phone_number": "5550001111", "type": "OUTGOING", "date": "2026-11-04 09:00:00", "duration": "01:00"}]
-        texts = [{"type": "sent", "sender": "You", "address": "5550001111", "received": "2026-11-04 09:05:00", "body": "x"}]
-        self.assertEqual(len(phone.build_entries([], calls, texts)), 2)
-
-    def test_durations(self):
-        self.assertEqual(phone.parse_duration("14:32"), 872)
-        self.assertEqual(phone.parse_duration("01:06:08"), 3968)
-        self.assertEqual(phone.parse_duration("00:00"), 0)
-        self.assertEqual(phone.parse_duration("junk"), 0)
-
-    def test_work_names(self):
-        for yes in ("Dana-Work", "Sam - Work", "Lee -Work ", "Kim- Work"):
-            self.assertTrue(phone.is_work(yes), yes)
-        for no in ("Work Plumbing", "Mom", "Dana-work", "Bets", "Dana-Work Jr", None):
-            self.assertFalse(phone.is_work(no), no)
-
-    def fake_termux(self, folder, name, output, code=0):
-        path = folder / name
-        path.write_text(f"#!/bin/sh\ncat <<'EOF'\n{output}\nEOF\nexit {code}\n")
-        path.chmod(path.stat().st_mode | stat.S_IEXEC)
-
-    def run_phone(self, contacts=CONTACTS, calls=CALLS, texts=TEXTS):
-        folder = Path(tempfile.mkdtemp(dir=self.temp))
-        self.fake_termux(folder, "termux-contact-list", json.dumps(contacts))
-        self.fake_termux(folder, "termux-call-log", json.dumps(calls))
-        self.fake_termux(folder, "termux-sms-list", json.dumps(texts))
-        env = {**os.environ, "PATH": f"{folder}:{os.environ['PATH']}", "CALLTALLY_SERVER": self.base}
-        return subprocess.run([sys.executable, str(PHONE_SCRIPT)], env=env, capture_output=True, text=True, timeout=60)
-
-    def test_full_run_then_delete_survives_the_next_run(self):
-        done = self.run_phone()
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("7 work entries found, 7 new", done.stdout)
+    def test_full_upload_counts_connected_calls_and_delete_survives_the_next(self):
+        rules = self.run_rules()
+        status, result = self.post("/api/upload", None, raw=rules["fixture-body"].encode())
+        self.assertEqual((status, result), (200, {"received": 8, "added": 8}))
         day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
-        self.assertEqual(day, {"call_s": 872 + 3968, "calls": 2, "unanswered": 1, "texts": 2, "deleted": 0})
+        self.assertEqual(day, {"call_s": 872 + 3968, "calls": 2, "unanswered": 1, "texts": 3, "deleted": 0})
         rows = self.get("/api/day?day=2026-11-04")["entries"]
-        self.assertEqual([r["at"] for r in rows], sorted(r["at"] for r in rows))
         target = next(r for r in rows if r["direction"] == "out" and r["kind"] == "call")
         self.post("/api/delete", {"id": target["id"]})
-        again = self.run_phone()
-        self.assertIn("7 work entries found, 0 new", again.stdout)
-        self.assertEqual(self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]["call_s"], 872)
+        self.assertEqual(self.post("/api/upload", None, raw=rules["fixture-body"].encode())[1], {"received": 8, "added": 0})
+        day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
+        self.assertEqual((day["call_s"], day["deleted"]), (872, 1))
+        self.assertIsNotNone(next(r for r in self.get("/api/day?day=2026-11-04")["entries"] if r["id"] == target["id"])["deleted_at"])
 
-    def test_refused_permission_uploads_nothing(self):
-        done = self.run_phone(calls={"error": "Please grant the following permission: READ_CALL_LOG"})
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("READ_CALL_LOG", done.stderr)
-        self.assertIsNone(self.get("/api/range?from=2026-11-04&to=2026-11-04")["last_upload"])
 
-    def test_no_reply_counts_as_a_failure(self):
-        folder = Path(tempfile.mkdtemp(dir=self.temp))
-        for name in ("termux-contact-list", "termux-call-log", "termux-sms-list"):
-            path = folder / name
-            path.write_text("#!/bin/sh\nexit 0\n")
-            path.chmod(0o755)
-        env = {**os.environ, "PATH": f"{folder}:{os.environ['PATH']}", "CALLTALLY_SERVER": self.base}
-        done = subprocess.run([sys.executable, str(PHONE_SCRIPT)], env=env, capture_output=True, text=True, timeout=60)
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("permissions", done.stderr)
-        self.assertIsNone(self.get("/api/range?from=2026-11-04&to=2026-11-04")["last_upload"])
+class TermuxIdTests(ServerCase):
+    """Runs without the build tools: the server still gives the rows the Termux script uploaded the same ids."""
 
-    def test_no_work_entries_still_checks_in(self):
-        done = self.run_phone(contacts=[], calls=[], texts=[])
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIsNotNone(self.get("/api/range?from=2026-11-04&to=2026-11-04")["last_upload"])
+    def test_server_ids_unchanged(self):
+        for key, e in TERMUX_UPLOAD:
+            self.assertEqual(calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]), key)
+        self.assertEqual(calltally.entry_id("text", "thread-4", 1793836800, "in"), APP_GROUP_ID)
+        self.assertEqual(self.post("/api/upload", {"entries": [e for _, e in TERMUX_UPLOAD]})[1], {"received": 8, "added": 8})
+        ids = {r["id"] for day in ("2026-11-03", "2026-11-04") for r in self.get(f"/api/day?day={day}")["entries"]}
+        self.assertEqual(ids, TERMUX_IDS)
 
-    def test_large_history_uploads_in_batches(self):
-        calls = [{"name": "Dana-Work", "phone_number": "5551234567", "type": "INCOMING",
-                  "date": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(1700000000 + i * 3600)), "duration": "01:00"}
-                 for i in range(1234)]
-        done = self.run_phone(contacts=[], calls=calls, texts=[])
-        self.assertIn("1234 work entries found, 1234 new", done.stdout, done.stderr)
+
+class TotalsToolTests(ServerCase):
+    """tools/totals.py, the before-and-after check for an install, counts the same way as the page."""
+
+    def test_matches_range_and_is_stable(self):
+        self.post("/api/upload", {"entries": [
+            entry(duration_s=60),
+            entry(epoch=1793000100, at="2026-11-04 09:01:40", direction="missed", duration_s=12),
+            entry(epoch=1793000200, at="2026-11-04 09:03:20", kind="text", duration_s=0),
+            entry(epoch=1793000300, at="2026-11-04 10:00:00", direction="out", duration_s=0),
+            entry(epoch=1793000600, at="2026-11-04 12:00:00", contact="Gone-Work", number="5554445555", duration_s=900),
+            entry(epoch=1793000700, at="2026-11-04 12:30:00", contact="Gone-Work", number="5554445555", kind="text", duration_s=0),
+            entry(epoch=1792900000, at="2026-11-03 06:00:00", duration_s=40),
+            entry(epoch=1790000000, at="2026-10-01 06:00:00", contact="Sam-Work", number="5552223333", duration_s=1000),
+            entry(epoch=1790000100, at="2026-10-31 23:59:59", contact="Sam-Work", number="5552223333", kind="text", duration_s=0),
+        ]})
+        for r in self.get("/api/day?day=2026-11-04")["entries"]:
+            if r["contact"] == "Gone-Work":
+                self.post("/api/delete", {"id": r["id"]})
+        tool = ROOT / "tools" / "totals.py"
+        database = Path(self.temp) / "t.db"
+        before = database.read_bytes()
+        runs = [subprocess.run([sys.executable, str(tool), str(database)], capture_output=True, text=True, check=True).stdout
+                for _ in range(2)]
+        self.assertEqual(runs[0], runs[1])
+        self.assertEqual(database.read_bytes(), before)
+        lines = runs[0].splitlines()
+        self.assertEqual(lines[-1], "all rows=9 latest=2026-11-04 12:30:00")
+        expected = []
+        for month, last in (("2026-10", "31"), ("2026-11", "30")):
+            days = self.get(f"/api/range?from={month}-01&to={month}-{last}")["days"].values()
+            total = {k: sum(d[k] for d in days) for k in ("call_s", "calls", "unanswered", "texts", "deleted")}
+            rows = sum(len(self.get(f"/api/day?day={month}-{n:02d}")["entries"]) for n in range(1, int(last) + 1))
+            expected.append(f"{month} call_s={total['call_s']} calls={total['calls']} texts={total['texts']}"
+                            f" deleted={total['deleted']} rows={rows}")
+        self.assertEqual(lines[:-1], expected)
+        self.assertEqual(lines[:-1], ["2026-10 call_s=1000 calls=1 texts=1 deleted=0 rows=2",
+                                      "2026-11 call_s=100 calls=2 texts=1 deleted=2 rows=7"])
+
+    def test_missing_database(self):
+        done = subprocess.run([sys.executable, str(ROOT / "tools" / "totals.py"), str(Path(self.temp) / "none.db")],
+                              capture_output=True, text=True)
+        self.assertEqual((done.returncode, done.stdout), (1, ""))
+        self.assertIn("no database", done.stderr)
+        self.assertFalse((Path(self.temp) / "none.db").exists())
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -383,11 +383,6 @@ def make_handler(store):
                 return
             self.send_bytes(200, path.read_bytes(), "application/vnd.android.package-archive")
 
-        def base_url(self):
-            proto = self.headers.get("X-Forwarded-Proto", "http")
-            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
-            return f"{proto}://{host}"
-
         def do_GET(self):
             url = urlparse(self.path)
             query = parse_qs(url.query, keep_blank_values=True)
@@ -413,11 +408,6 @@ def make_handler(store):
                     self.send_json(200, {"ok": True, "version": VERSION})
                 elif url.path == "/phone/calltally.apk":
                     self.send_apk()
-                elif url.path == "/phone/calltally-phone.py":
-                    self.send_file("phone/calltally-phone.py", "text/plain; charset=utf-8")
-                elif url.path == "/phone/setup.sh":
-                    text = (HERE / "phone/setup.sh").read_text().replace("__BASE_URL__", self.base_url())
-                    self.send_bytes(200, text.encode(), "text/plain; charset=utf-8")
                 else:
                     self.send_json(404, {"error": "not found"})
             except BadRequest as error:
