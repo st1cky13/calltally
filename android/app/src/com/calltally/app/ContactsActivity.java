@@ -133,7 +133,7 @@ public class ContactsActivity extends Screen {
             who.setTypeface(medium());
             info.addView(who);
             String counts = Words.counts(item.calls, item.texts);
-            if (perText > 0) counts += " · text time " + Words.textTime(item.texts, perText);
+            if (perText > 0 && item.texts > 0) counts += " · text time " + Words.textTime(item.texts, perText);
             info.addView(text(counts, 13, muted, false));
             row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             TextView time = text(Words.fullTime(item.callS), 15, txt, false);

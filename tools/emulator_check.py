@@ -1381,8 +1381,13 @@ def main():
         cell = next((n for n in by_id(nodes, "day_cell") if n.get("content-desc") == words), None)
         if cell is not None:
             run.tap(cell)
-            run.wait_for(lambda ns: bool(by_id(ns, "tab_calls")) or bool(by_id(ns, "entry_action")), 15)
+            day_nodes = run.wait_for(lambda ns: bool(by_id(ns, "tab_calls")) or bool(by_id(ns, "entry_action")), 15)
             time.sleep(1)
+            # 0.9.12: the day's text time, its texts times 15 seconds, only when the day has a text.
+            want_day = f"Text time {full_time(busy['texts'] * 15)}" if busy["texts"] > 0 else None
+            day_nodes = run.wait_for(lambda ns: text_of(ns, "text_time") == want_day, 10)
+            check("at 15 seconds per text the day view shows the day's text time",
+                  text_of(day_nodes, "text_time") == want_day, f"{text_of(day_nodes, 'text_time')!r} want {want_day!r}")
             run.shot("11-day-view")
             run.sh("input", "keyevent", "KEYCODE_BACK")
             nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title, 15)
@@ -1392,6 +1397,11 @@ def main():
             run.tap(by_id(nodes, "total_month")[0])
             run.wait_for(lambda ns: bool(by_id(ns, "contact_row")), 15)
             time.sleep(1)
+            # 0.9.12: the sheet's header has the month's text time, its texts times 15 seconds.
+            want_month = f"Text time {full_time(seeded_totals['texts'] * 15)}"
+            sheet = run.wait_for(lambda ns: text_of(ns, "text_time") == want_month, 10)
+            check("at 15 seconds per text the by-contact header shows the month's text time",
+                  text_of(sheet, "text_time") == want_month, f"{text_of(sheet, 'text_time')!r} want {want_month!r}")
             run.shot("12-by-contact")
             run.sh("input", "keyevent", "KEYCODE_BACK")
             run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title, 15)

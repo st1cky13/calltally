@@ -169,6 +169,7 @@ public class OptionsActivity extends Screen {
                 box.addView(explain, explainGap);
                 value = new android.widget.EditText(OptionsActivity.this);
                 value.setId(R.id.text_time_value);
+                value.setSelectAllOnFocus(true);
                 value.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
                 value.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(4)});
                 value.setSingleLine(true);
@@ -265,6 +266,8 @@ public class OptionsActivity extends Screen {
                         | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 }
                 value.requestFocus();
+                // The whole number selected, so typing replaces it.
+                value.selectAll();
             }
 
             /** The old and new rule once the seconds differ; Confirm only then. */

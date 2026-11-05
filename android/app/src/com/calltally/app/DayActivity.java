@@ -55,8 +55,8 @@ public class DayActivity extends Screen {
         line = text("", 14, muted, false);
         line.setId(R.id.day_line);
         head.addView(line, wide());
-        // The texts' own time under their count, only when the owner gives each text some seconds.
-        textTime = text("", 13, muted, false);
+        // The texts' own time under their count, only when the owner gives each text some seconds and the day has a text.
+        textTime = text("", 14, muted, false);
         textTime.setId(R.id.text_time);
         figures(textTime);
         textTime.setVisibility(View.GONE);
@@ -169,7 +169,7 @@ public class DayActivity extends Screen {
                         total.setText(Words.fullTime(sums == null ? 0 : sums.callS));
                         line.setText(sums == null ? Words.counts(0, 0) : Words.counts(sums.calls, sums.texts));
                         textTime.setText("Text time " + Words.textTime(sums == null ? 0 : sums.texts, perText));
-                        textTime.setVisibility(perText > 0 ? View.VISIBLE : View.GONE);
+                        textTime.setVisibility(perText > 0 && sums != null && sums.texts > 0 ? View.VISIBLE : View.GONE);
                         if (tab == null) {
                             // The tab last chosen when it has anything, otherwise Calls if the day has a call, else Texts.
                             tab = chosenTab != null && has(chosenTab) ? chosenTab : has("call") ? "call" : "text";

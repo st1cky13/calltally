@@ -36,8 +36,8 @@ import java.util.Map;
 /**
  * The month screen: the month's call time and texts day by day, the month and pay period totals above the calendar and
  * All time below it. Tapping a day opens it; tapping a total lists it by contact; tapping the month's name picks another
- * month; a sideways swipe on the calendar moves one month, or one pay period when it starts on the pay period line. Also asks for permission and starts the first run. Runs happen
- * without this screen; it redraws when one finishes.
+ * month; a sideways swipe on the calendar moves one month, or one pay period when it starts on the pay period line.
+ * Also asks for permission and starts the first run. Runs happen without this screen; it redraws when one finishes.
  */
 public class MainActivity extends Screen {
     private static final int ASK = 1;
@@ -401,6 +401,9 @@ public class MainActivity extends Screen {
         private float downX;
         private float downY;
         private boolean swiping;
+        /** The finger the touch started with; a second finger ends the swipe until every finger is lifted. */
+        private int pointer = MotionEvent.INVALID_POINTER_ID;
+        private boolean ignoring;
         /** The touch started on the pay period line, so a swipe steps the pay period rather than the month. */
         private boolean onPeriod;
 
@@ -432,14 +435,25 @@ public class MainActivity extends Screen {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     speed.clear();
+                    pointer = event.getPointerId(0);
+                    ignoring = false;
                     downX = event.getX();
                     downY = event.getY();
                     swiping = false;
                     onPeriod = periodLine.getVisibility() == View.VISIBLE && downX >= periodLine.getLeft() && downX < periodLine.getRight()
                         && downY >= periodLine.getTop() && downY < periodLine.getBottom();
                     break;
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    // A second finger: no swipe from this touch, so lifting the first can't make a jump look like one.
+                    swiping = false;
+                    ignoring = true;
+                    speed.clear();
+                    return;
                 case MotionEvent.ACTION_MOVE:
-                    float dx = Math.abs(event.getX() - downX), dy = Math.abs(event.getY() - downY);
+                    if (ignoring) return;
+                    int at = event.findPointerIndex(pointer);
+                    if (at < 0) return;
+                    float dx = Math.abs(event.getX(at) - downX), dy = Math.abs(event.getY(at) - downY);
                     if (!swiping && dx > slop && dx > 2 * dy) {
                         swiping = true;
                         getParent().requestDisallowInterceptTouchEvent(true);
@@ -451,7 +465,7 @@ public class MainActivity extends Screen {
                 default:
                     break;
             }
-            speed.addMovement(event);
+            if (!ignoring) speed.addMovement(event);
         }
 
         /** A long enough swipe, or a quick flick, moves one month or pay period: left for the next, right for the one before. */
@@ -578,6 +592,8 @@ public class MainActivity extends Screen {
         if (period == null) return;
         periodK += by;
         periodFollow = periodK == period.index(today);
+        // The arrows' limits at once, so a second quick swipe before the record answers can't step past them.
+        enablePeriodArrows();
         load();
     }
 
@@ -745,6 +761,10 @@ public class MainActivity extends Screen {
         // The month's name always looks the same; with no entries yet there is nothing to pick, so a tap does nothing.
         title.setEnabled(earliest != null);
         title.setClickable(earliest != null);
+        enablePeriodArrows();
+    }
+
+    private void enablePeriodArrows() {
         if (period == null) {
             enable(periodPrev, false);
             enable(periodNext, false);
