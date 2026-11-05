@@ -36,6 +36,14 @@ import java.util.Map;
 public class MainActivity extends Screen {
     private static final int ASK = 1;
     private static final String[] WEEK = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    // One scale of gaps and one of corners for the month screen and its picker, in dp.
+    private static final int GAP_S = 4;
+    private static final int GAP = 8;
+    private static final int GAP_L = 12;
+    private static final int GAP_XL = 16;
+    // Tiles and buttons; the totals rows and the pay period line.
+    private static final int CORNER = 8;
+    private static final int CORNER_CARD = 12;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean asked;
     private boolean narrow;
@@ -123,15 +131,15 @@ public class MainActivity extends Screen {
 
         // A narrow phone gets tighter edges and gaps, so a day's call time still fits its cell.
         narrow = getResources().getConfiguration().screenWidthDp < 380;
-        int edge = narrow ? 6 : 12;
+        int edge = narrow ? GAP : GAP_XL;
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(edge), dp(12), dp(edge), dp(12));
+        column.setPadding(dp(edge), dp(GAP_L), dp(edge), dp(GAP_L));
         // The damaged-record note stays until OK is tapped, apart from the run's own problems below it.
         damagedBox = new LinearLayout(this);
         damagedBox.setOrientation(LinearLayout.VERTICAL);
-        damagedBox.setBackground(shape(lossTint, loss, 1, 10));
-        damagedBox.setPadding(dp(12), dp(8), dp(12), dp(8));
+        damagedBox.setBackground(shape(lossTint, loss, 1, CORNER_CARD));
+        damagedBox.setPadding(dp(GAP_L), dp(GAP), dp(GAP_L), dp(GAP));
         damagedBox.setVisibility(View.GONE);
         damaged = text("", 14, loss, false);
         damaged.setId(R.id.damaged);
@@ -152,11 +160,11 @@ public class MainActivity extends Screen {
             }
         });
         LinearLayout.LayoutParams okGap = new LinearLayout.LayoutParams(dp(88), ViewGroup.LayoutParams.WRAP_CONTENT);
-        okGap.topMargin = dp(8);
+        okGap.topMargin = dp(GAP);
         okGap.gravity = Gravity.END;
         damagedBox.addView(ok, okGap);
         LinearLayout.LayoutParams gapBelow = wide();
-        gapBelow.bottomMargin = dp(10);
+        gapBelow.bottomMargin = dp(GAP_L);
         column.addView(damagedBox, gapBelow);
         problem = problemBox();
         problem.setId(R.id.problem);
@@ -166,10 +174,9 @@ public class MainActivity extends Screen {
         empty.setVisibility(View.GONE);
         column.addView(empty, gapBelow);
 
+        // The month's nav, totals, calendar and All time sit straight on the page, with no card around them.
         LinearLayout monthCard = new LinearLayout(this);
         monthCard.setOrientation(LinearLayout.VERTICAL);
-        monthCard.setBackground(shape(card, line, 1, 12));
-        monthCard.setPadding(dp(narrow ? 4 : 8), dp(8), dp(narrow ? 4 : 8), dp(8));
         column.addView(monthCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
         LinearLayout nav = row();
@@ -184,9 +191,9 @@ public class MainActivity extends Screen {
         figures(title);
         title.setId(R.id.month_title);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(dp(6), 0, dp(6), 0);
+        title.setPadding(dp(GAP_S), 0, dp(GAP_S), 0);
         title.setMinHeight(dp(48));
-        title.setBackground(touchable(null, 8));
+        title.setBackground(touchable(null, CORNER));
         // The month's name sits between its own two arrows, with >> at the far right.
         nav.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(48)));
         nav.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -220,7 +227,7 @@ public class MainActivity extends Screen {
 
         monthRow = totalRow(R.id.total_month);
         LinearLayout.LayoutParams rowGap = wide();
-        rowGap.topMargin = dp(8);
+        rowGap.topMargin = dp(GAP);
         monthCard.addView(monthRow, rowGap);
         monthRow.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -229,18 +236,18 @@ public class MainActivity extends Screen {
             }
         });
 
+        // One shape like the totals rows: the arrows at its two ends step the period, the middle lists it by contact.
         periodLine = row();
+        periodLine.setBackground(touchable(shape(soft(), 0, 0, CORNER_CARD), CORNER_CARD));
         periodPrev = arrow(R.drawable.chevron_left, "Previous pay period", R.id.period_prev);
         periodNext = arrow(R.drawable.chevron_right, "Next pay period", R.id.period_next);
         periodRow = totalRow(R.id.total_period);
-        periodLine.addView(periodPrev, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
-        LinearLayout.LayoutParams middle = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        middle.leftMargin = dp(6);
-        middle.rightMargin = dp(6);
-        periodLine.addView(periodRow, middle);
-        periodLine.addView(periodNext, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
+        periodRow.setBackground(touchable(null, CORNER_CARD));
+        periodLine.addView(periodPrev, new LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT));
+        periodLine.addView(periodRow, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        periodLine.addView(periodNext, new LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT));
         LinearLayout.LayoutParams periodGap = wide();
-        periodGap.topMargin = dp(5);
+        periodGap.topMargin = dp(GAP);
         monthCard.addView(periodLine, periodGap);
         periodPrev.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -269,8 +276,8 @@ public class MainActivity extends Screen {
             week.addView(day, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         }
         LinearLayout.LayoutParams weekGap = wide();
-        weekGap.topMargin = dp(8);
-        weekGap.bottomMargin = dp(3);
+        weekGap.topMargin = dp(GAP_L);
+        weekGap.bottomMargin = dp(GAP);
         monthCard.addView(week, weekGap);
 
         grid = new LinearLayout(this);
@@ -352,11 +359,11 @@ public class MainActivity extends Screen {
         row.setMinimumWidth(0);
         row.setMinHeight(dp(46));
         row.setMinimumHeight(dp(46));
-        row.setPadding(dp(10), dp(4), dp(10), dp(4));
+        row.setPadding(dp(GAP_L), dp(GAP_S), dp(GAP_L), dp(GAP_S));
         row.setTextSize(13);
         row.setTextColor(muted);
         row.setLineSpacing(0, 1.1f);
-        row.setBackground(touchable(shape(tint, line2, 1, 8)));
+        row.setBackground(touchable(shape(soft(), 0, 0, CORNER_CARD), CORNER_CARD));
         figures(row);
         return row;
     }
@@ -506,12 +513,13 @@ public class MainActivity extends Screen {
         cell.setId(R.id.day_cell);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setPadding(dp(narrow ? 2 : 4), dp(3), dp(narrow ? 1 : 3), dp(2));
-        TextView number = text(String.valueOf(date.getDayOfMonth()), 13, muted, false);
-        FitText time = new FitText(this, 14);
+        // The call time leads; the day's number and its texts are small and quiet around it.
+        TextView number = text(String.valueOf(date.getDayOfMonth()), 11, muted, false);
+        FitText time = new FitText(this, narrow ? 14 : 15);
         time.setTextColor(txt);
-        time.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        time.setTypeface(medium());
         figures(time);
-        TextView texts = text("", 12, muted, false);
+        TextView texts = text("", 11, muted, false);
         texts.setLineSpacing(0, 0.95f);
         cell.addView(number, wide());
         cell.addView(time, wide());
@@ -532,13 +540,14 @@ public class MainActivity extends Screen {
         boolean used = data != null && data.calls + data.unanswered + data.texts + data.ignored > 0;
         boolean isToday = date.equals(today);
         // Only a day with something gets a tile; today keeps its ring. A day still to come has its number paler.
-        int busy = (accent & 0x00ffffff) | (night() ? 0x33000000 : 0x22000000);
-        cell.setBackground(isToday ? touchable(shape(used ? busy : 0, accent, 2, 8), 8) : used ? touchable(shape(busy, 0, 0, 8), 8) : null);
+        int busy = soft();
+        cell.setBackground(isToday ? touchable(shape(used ? busy : 0, accent, 2, CORNER), CORNER)
+            : used ? touchable(shape(busy, 0, 0, CORNER), CORNER) : null);
         cell.setClickable(used);
         cell.setEnabled(used);
         int faint = (muted & 0x00ffffff) | 0x80000000;
         number.setTextColor(isToday ? accent : !used && date.isAfter(today) ? faint : muted);
-        number.setTypeface(isToday ? Typeface.create(Typeface.DEFAULT, Typeface.BOLD) : Typeface.DEFAULT);
+        number.setTypeface(isToday ? medium() : Typeface.DEFAULT);
         StringBuilder words = new StringBuilder(Words.monthName(date.getMonthValue()) + " " + date.getDayOfMonth());
         if (data != null && data.calls > 0) {
             time.show(Words.clockTime(data.callS));
@@ -548,12 +557,10 @@ public class MainActivity extends Screen {
             time.show("");
             time.setVisibility(View.GONE);
         }
-        texts.setTextSize(12);
         if (data != null && data.texts > 0) {
             texts.setText(Words.plural(data.texts, "text"));
             words.append(", ").append(Words.plural(data.texts, "text"));
         } else if (used && data.calls == 0) {
-            texts.setTextSize(11);
             texts.setText(data.unanswered > 0 ? "no answer" : "ignored");
             words.append(data.unanswered > 0 ? ", calls not answered only" : ", ignored entries only");
         } else {
@@ -591,20 +598,20 @@ public class MainActivity extends Screen {
         return false;
     }
 
-    /** A year with arrows, its twelve months to tap, and Close, drawn in the page's own style. */
+    /** A year with arrows, its twelve months as a plain grid to tap, and Close, drawn in the page's own style. */
     private void pick() {
         if (earliest == null || picker != null) return;
         pickYear = view.getYear();
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(shape(card, line, 1, 12));
-        box.setPadding(dp(12), dp(12), dp(12), dp(12));
+        box.setBackground(shape(card, line, 1, CORNER_CARD));
+        box.setPadding(dp(GAP_L), dp(GAP_L), dp(GAP_L), dp(GAP_L));
 
         LinearLayout top = row();
         top.setGravity(Gravity.CENTER_VERTICAL);
         pickPrev = arrow(R.drawable.chevron_left, "Previous year", R.id.pick_prev);
         pickNext = arrow(R.drawable.chevron_right, "Next year", R.id.pick_next);
-        pickTitle = text("", 20, txt, false);
+        pickTitle = text("", 22, txt, false);
         pickTitle.setTypeface(medium());
         pickTitle.setId(R.id.pick_year);
         pickTitle.setGravity(Gravity.CENTER);
@@ -643,27 +650,33 @@ public class MainActivity extends Screen {
                     }
                 });
                 LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-                if (c > 0) cell.leftMargin = dp(6);
+                if (c > 0) cell.leftMargin = dp(GAP);
                 months.addView(button, cell);
                 pickMonths[month - 1] = button;
             }
             LinearLayout.LayoutParams gap = wide();
-            gap.topMargin = dp(r == 0 ? 10 : 6);
+            gap.topMargin = dp(r == 0 ? GAP_L : GAP);
             box.addView(months, gap);
         }
 
+        // Close is a plain word in the accent at the bottom right, with no box.
         Button close = button("Close");
         close.setId(R.id.close);
         close.setMinHeight(dp(48));
         close.setMinimumHeight(dp(48));
+        close.setPadding(dp(GAP_XL), dp(GAP_S), dp(GAP_XL), dp(GAP_S));
+        close.setTextColor(accent);
+        close.setTypeface(medium());
+        close.setBackground(touchable(null, CORNER));
         close.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (picker != null) picker.dismiss();
             }
         });
-        LinearLayout.LayoutParams closeGap = wide();
-        closeGap.topMargin = dp(14);
+        LinearLayout.LayoutParams closeGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        closeGap.topMargin = dp(GAP_L);
+        closeGap.gravity = Gravity.END;
         box.addView(close, closeGap);
 
         // On a short screen, such as a phone on its side, the picker scrolls so Close is always reachable.
@@ -696,14 +709,18 @@ public class MainActivity extends Screen {
         for (int m = 1; m <= 12; m++) {
             YearMonth month = YearMonth.of(pickYear, m);
             Button button = pickMonths[m - 1];
+            boolean open = pickable(month);
+            // No boxes: the month on show is an accent pill, this month has an accent ring like today on the calendar,
+            // and a month with nothing to show is pale and does nothing.
             if (month.equals(view)) {
-                outlined(button);
+                filled(button, 24);
             } else {
-                plain(button);
-                // This month in bold, like today on the calendar.
-                if (month.equals(thisMonth)) button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                button.setTextColor(open ? txt : (muted & 0x00ffffff) | 0x80000000);
+                button.setTypeface(month.equals(thisMonth) ? medium() : Typeface.DEFAULT);
+                button.setBackground(month.equals(thisMonth) ? touchable(shape(0, accent, 2, 24), 24) : touchable(null, 24));
             }
-            enable(button, pickable(month));
+            button.setEnabled(open);
+            button.setAlpha(1f);
         }
         enable(pickPrev, anyPickable(pickYear - 1));
         enable(pickNext, anyPickable(pickYear + 1));

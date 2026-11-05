@@ -390,11 +390,26 @@ abstract class Screen extends Activity {
         button.setBackground(touchable(shape(accent, accent, 1, 8)));
     }
 
+    /** The same with corners of this radius, 24 for a pill; the touch has a mask of its own so it shows on the accent. */
+    void filled(Button button, float radiusDp) {
+        button.setTextColor(ink);
+        button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        button.setBackground(touchable(shape(accent, accent, 0, radiusDp), radiusDp));
+    }
+
     /** A chosen theme: outlined with the accent. */
     void outlined(Button button) {
         button.setTextColor(txt);
         button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         button.setBackground(touchable(shape(card2, accent, 2, 8)));
+    }
+
+    /**
+     * The soft accent fill of a busy day's tile and the totals, without a line: light enough for the text on it and still
+     * plain to see on the dark page.
+     */
+    int soft() {
+        return (accent & 0x00ffffff) | (night() ? 0x33000000 : 0x22000000);
     }
 
     /** A chevron in muted on a round touch, for moving between months and years. */
