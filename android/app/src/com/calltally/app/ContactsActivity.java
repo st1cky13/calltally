@@ -16,7 +16,10 @@ public class ContactsActivity extends Screen {
     private String to;
     private TextView total;
     private TextView line;
+    private TextView textTime;
     private LinearLayout rows;
+    /** The owner's time per text in seconds, 0 when off. */
+    private int perText;
     private TextView nothing;
 
     @Override
@@ -40,6 +43,12 @@ public class ContactsActivity extends Screen {
         line = text("", 13, muted, false);
         line.setId(R.id.day_line);
         head.addView(line, wide());
+        // The texts' own time under their count, only when the owner gives each text some seconds.
+        textTime = text("", 13, muted, false);
+        textTime.setId(R.id.text_time);
+        figures(textTime);
+        textTime.setVisibility(View.GONE);
+        head.addView(textTime, wide());
         page.addView(head, wide());
         page.addView(divider());
         rows = new LinearLayout(this);
@@ -66,11 +75,13 @@ public class ContactsActivity extends Screen {
             public void run() {
                 List<Record.Totals> list = null;
                 Record.Totals totals = null;
+                int seconds = 0;
                 String problem = null;
                 try {
                     Record record = Record.get(context);
                     list = from == null ? record.contacts() : record.contacts(from, to);
                     totals = from == null ? record.totals() : record.totals(from, to);
+                    seconds = record.textSeconds();
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
                 } catch (RuntimeException error) {
@@ -78,6 +89,7 @@ public class ContactsActivity extends Screen {
                 }
                 final List<Record.Totals> found = list;
                 final Record.Totals sums = totals;
+                final int each = seconds;
                 final String trouble = problem;
                 runOnUiThread(new Runnable() {
                     @Override
@@ -90,6 +102,9 @@ public class ContactsActivity extends Screen {
                         }
                         total.setText(Words.fullTime(sums.callS));
                         line.setText(Words.counts(sums.calls, sums.texts));
+                        perText = each;
+                        textTime.setText("Text time " + Words.textTime(sums.texts, perText));
+                        textTime.setVisibility(perText > 0 ? View.VISIBLE : View.GONE);
                         show(found);
                     }
                 });
@@ -117,7 +132,9 @@ public class ContactsActivity extends Screen {
             TextView who = text(item.contact, 15, txt, false);
             who.setTypeface(medium());
             info.addView(who);
-            info.addView(text(Words.counts(item.calls, item.texts), 13, muted, false));
+            String counts = Words.counts(item.calls, item.texts);
+            if (perText > 0) counts += " · text time " + Words.textTime(item.texts, perText);
+            info.addView(text(counts, 13, muted, false));
             row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             TextView time = text(Words.fullTime(item.callS), 15, txt, false);
             time.setPadding(dp(10), 0, 0, 0);

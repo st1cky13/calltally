@@ -38,6 +38,26 @@ final class Words {
         return plural(calls, "call") + " · " + plural(texts, "text");
     }
 
+    /** The time the texts are given by the owner's rule: so many seconds each, kept apart from call time. "2m 15s" */
+    static String textTime(long texts, long seconds) {
+        return fullTime(texts * seconds);
+    }
+
+    /** The rule's seconds per text from its saved words: 0, which is off, when unset, unreadable or below 0. */
+    static int textSeconds(String saved) {
+        if (saved == null) return 0;
+        try {
+            return Math.max(0, Integer.parseInt(saved.trim()));
+        } catch (NumberFormatException error) {
+            return 0;
+        }
+    }
+
+    /** "Time per text: off" or "Time per text: 15 seconds", for Options and its review line. */
+    static String textRule(int seconds) {
+        return seconds <= 0 ? "off" : plural(seconds, "second");
+    }
+
     /** "3:08 PM" from a recorded clock time, yyyy-MM-dd HH:mm:ss. */
     static String clock(String at) {
         int h = Integer.parseInt(at.substring(11, 13));

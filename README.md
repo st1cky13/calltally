@@ -31,6 +31,8 @@ stays hidden until you set one in Options. The page can be shown again from Opti
 - Two messages in one conversation, in the same direction, in the same second count as one.
 - The app reads when a call or text happened, who it was with, its direction and a call's length. It never reads what a
   text says.
+- You can give each text a number of seconds in Options; that text time shows beside the text counts and is kept apart
+  from call time.
 
 ## Encrypted chats
 

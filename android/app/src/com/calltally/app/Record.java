@@ -424,6 +424,17 @@ final class Record {
         db().insertWithOnConflict("settings", null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
+    static final String TEXT_SECONDS = "text_seconds";
+
+    /** The owner's time per text in seconds; 0, the default, is off. Shown apart from call time, never stored per entry. */
+    int textSeconds() {
+        return Words.textSeconds(setting(TEXT_SECONDS));
+    }
+
+    void setTextSeconds(int seconds) {
+        setSetting(TEXT_SECONDS, String.valueOf(Math.max(0, seconds)));
+    }
+
     /** Your own numbers, by their last ten digits, as learned from the picture messages you sent. */
     Set<String> ownNumbers() {
         return Rules.ownKeys(setting(OWN_NUMBERS));

@@ -83,6 +83,11 @@
     <item type="id" name="still_default" />
     <item type="id" name="switch_back" />
     <item type="id" name="version_line" />
+    <item type="id" name="text_time_line" />
+    <item type="id" name="text_time_change" />
+    <item type="id" name="text_time_value" />
+    <item type="id" name="text_time_review" />
+    <item type="id" name="text_time" />
     <!-- A tag, not a part: marks a quiet button, which dims further when off. -->
     <item type="id" name="quiet" />
 </resources>

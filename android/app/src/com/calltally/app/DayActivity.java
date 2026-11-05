@@ -28,6 +28,7 @@ public class DayActivity extends Screen {
     private String widest = "0s";
     private TextView total;
     private TextView line;
+    private TextView textTime;
     private Button calls;
     private Button texts;
     private LinearLayout rows;
@@ -54,6 +55,12 @@ public class DayActivity extends Screen {
         line = text("", 14, muted, false);
         line.setId(R.id.day_line);
         head.addView(line, wide());
+        // The texts' own time under their count, only when the owner gives each text some seconds.
+        textTime = text("", 13, muted, false);
+        textTime.setId(R.id.text_time);
+        figures(textTime);
+        textTime.setVisibility(View.GONE);
+        head.addView(textTime, wide());
         // One track in the second card's grey; the chosen half sits in it as a white card with an accent line.
         LinearLayout tabs = row();
         tabs.setBackground(shape(card2, 0, 0, 10));
@@ -127,12 +134,14 @@ public class DayActivity extends Screen {
                 List<Record.Item> got = null;
                 Record.DayTotals totals = null;
                 boolean hidden = false;
+                int seconds = 0;
                 String problem = null;
                 try {
                     Record record = Record.get(context);
                     got = record.day(day);
                     totals = record.days(day, day).get(day);
                     hidden = "1".equals(record.setting("hide_ignored"));
+                    seconds = record.textSeconds();
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
                 } catch (RuntimeException error) {
@@ -141,6 +150,7 @@ public class DayActivity extends Screen {
                 final List<Record.Item> found = got;
                 final Record.DayTotals sums = totals;
                 final boolean hideIt = hidden;
+                final int perText = seconds;
                 final String trouble = problem;
                 runOnUiThread(new Runnable() {
                     @Override
@@ -148,6 +158,7 @@ public class DayActivity extends Screen {
                         if (mine != asking || isDestroyed()) return;
                         if (trouble != null) {
                             total.setVisibility(View.GONE);
+                            textTime.setVisibility(View.GONE);
                             line.setText(trouble);
                             return;
                         }
@@ -157,6 +168,8 @@ public class DayActivity extends Screen {
                         total.setVisibility(View.VISIBLE);
                         total.setText(Words.fullTime(sums == null ? 0 : sums.callS));
                         line.setText(sums == null ? Words.counts(0, 0) : Words.counts(sums.calls, sums.texts));
+                        textTime.setText("Text time " + Words.textTime(sums == null ? 0 : sums.texts, perText));
+                        textTime.setVisibility(perText > 0 ? View.VISIBLE : View.GONE);
                         if (tab == null) {
                             // The tab last chosen when it has anything, otherwise Calls if the day has a call, else Texts.
                             tab = chosenTab != null && has(chosenTab) ? chosenTab : has("call") ? "call" : "text";

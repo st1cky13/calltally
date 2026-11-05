@@ -97,6 +97,252 @@ public class OptionsActivity extends Screen {
         hide.setButtonTintList(new ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {accent, muted}));
         column.addView(hide, wide());
 
+        // Time per text: the owner's seconds for each text, shown beside the text counts and kept apart from call time.
+        // Change opens a small window with the old and new rule; nothing is saved until Confirm.
+        heading("Texts");
+        final TextView textLine = muted("");
+        textLine.setId(R.id.text_time_line);
+        final Button textChange = button("Change");
+        textChange.setId(R.id.text_time_change);
+        // Off until the record is read; it stays off when the record can't be read.
+        enable(textChange, false);
+        pair(textLine, textChange);
+        final class TextTime {
+            /** The saved seconds per text, 0 when off; -1 until the record is read. */
+            int saved = -1;
+            android.app.Dialog window;
+            android.widget.EditText value;
+            TextView review;
+            Button close;
+            Button revert;
+            Button confirm;
+
+            /** Reads the rule away from the screen and shows it on its line. */
+            void load() {
+                final Context context = getApplicationContext();
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        int seconds = -1;
+                        String problem = null;
+                        try {
+                            seconds = Record.get(context).textSeconds();
+                        } catch (Record.TooNew error) {
+                            problem = error.getMessage();
+                        } catch (RuntimeException error) {
+                            problem = Record.UNREADABLE;
+                        }
+                        final int got = seconds;
+                        final String trouble = problem;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isDestroyed()) return;
+                                saved = got;
+                                textLine.setText(trouble != null ? trouble : "Time per text: " + Words.textRule(got));
+                                enable(textChange, trouble == null);
+                            }
+                        });
+                    }
+                }).start();
+            }
+
+            /** The seconds typed, or -1 when the box is empty. */
+            int typed() {
+                String words = value.getText().toString().trim();
+                return words.isEmpty() ? -1 : Words.textSeconds(words);
+            }
+
+            /** A window in the page's style: what the rule does, the seconds, the old and new rule, and the buttons. */
+            void open() {
+                if (saved < 0 || window != null) return;
+                LinearLayout box = new LinearLayout(OptionsActivity.this);
+                box.setOrientation(LinearLayout.VERTICAL);
+                box.setBackground(shape(card, line, 1, 12));
+                box.setPadding(dp(12), dp(12), dp(12), dp(12));
+                TextView title = text("Time per text", 16, txt, false);
+                title.setTypeface(medium());
+                box.addView(title, wide());
+                TextView explain = muted("Seconds counted for each text, shown apart from call time. 0 turns it off.");
+                LinearLayout.LayoutParams explainGap = wide();
+                explainGap.topMargin = dp(6);
+                box.addView(explain, explainGap);
+                value = new android.widget.EditText(OptionsActivity.this);
+                value.setId(R.id.text_time_value);
+                value.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+                value.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(4)});
+                value.setSingleLine(true);
+                value.setTextSize(16);
+                value.setTextColor(txt);
+                value.setHintTextColor(muted);
+                value.setHint("0");
+                figures(value);
+                value.setBackground(shape(card2, line2, 1, 8));
+                value.setPadding(dp(12), dp(10), dp(12), dp(10));
+                value.setText(String.valueOf(saved));
+                value.setSelection(value.getText().length());
+                LinearLayout.LayoutParams valueGap = wide();
+                valueGap.topMargin = dp(12);
+                box.addView(value, valueGap);
+                review = muted("");
+                review.setId(R.id.text_time_review);
+                figures(review);
+                review.setVisibility(View.GONE);
+                LinearLayout.LayoutParams reviewGap = wide();
+                reviewGap.topMargin = dp(10);
+                box.addView(review, reviewGap);
+
+                // Confirm is the one way forward and the only filled button; Close, or Revert changes once the seconds
+                // differ, is a quiet word beside it.
+                close = button("Close");
+                close.setId(R.id.close);
+                quiet(close);
+                close.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (window != null) window.dismiss();
+                    }
+                });
+                revert = button("Revert changes");
+                revert.setId(R.id.revert);
+                quiet(revert);
+                revert.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        value.setText(String.valueOf(saved));
+                        value.setSelection(value.getText().length());
+                    }
+                });
+                confirm = button("Confirm");
+                confirm.setId(R.id.confirm);
+                filled(confirm);
+                confirm.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        save();
+                    }
+                });
+                LinearLayout buttons = footer(close, revert, confirm);
+                ((LinearLayout.LayoutParams) revert.getLayoutParams()).leftMargin = 0;
+                LinearLayout.LayoutParams buttonsGap = wide();
+                buttonsGap.topMargin = dp(12);
+                box.addView(buttons, buttonsGap);
+                value.addTextChangedListener(new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence words, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence words, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable words) {
+                        draw();
+                    }
+                });
+                draw();
+
+                // On a short screen, such as a phone on its side, the window scrolls so Confirm is always reachable.
+                ScrollView boxScroll = new ScrollView(OptionsActivity.this);
+                boxScroll.setFillViewport(true);
+                boxScroll.addView(box, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                window = new android.app.Dialog(OptionsActivity.this);
+                window.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+                window.setContentView(boxScroll);
+                window.setCanceledOnTouchOutside(true);
+                window.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+                    @Override
+                    public void onDismiss(android.content.DialogInterface dialog) {
+                        window = null;
+                    }
+                });
+                window.show();
+                android.view.Window frame = window.getWindow();
+                if (frame != null) {
+                    frame.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+                    int across = getResources().getDisplayMetrics().widthPixels - dp(32);
+                    frame.setLayout(Math.min(dp(360), across), ViewGroup.LayoutParams.WRAP_CONTENT);
+                    frame.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                        | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                }
+                value.requestFocus();
+            }
+
+            /** The old and new rule once the seconds differ; Confirm only then. */
+            void draw() {
+                int now = typed();
+                boolean changed = now >= 0 && now != saved;
+                close.setVisibility(changed || now < 0 ? View.GONE : View.VISIBLE);
+                revert.setVisibility(changed || now < 0 ? View.VISIBLE : View.GONE);
+                enable(confirm, changed);
+                review.setVisibility(changed ? View.VISIBLE : View.GONE);
+                if (!changed) return;
+                android.text.SpannableStringBuilder words = new android.text.SpannableStringBuilder("Time per text: ");
+                strong(words, Words.textRule(saved));
+                words.append(" → ");
+                strong(words, Words.textRule(now));
+                review.setText(words);
+            }
+
+            /** A value in the review line, in the text colour. */
+            void strong(android.text.SpannableStringBuilder words, String part) {
+                int from = words.length();
+                words.append(part);
+                words.setSpan(new android.text.style.ForegroundColorSpan(txt), from, words.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            /** Writes the rule to the record away from the screen, then closes and shows the new rule on its line. */
+            void save() {
+                final int seconds = typed();
+                if (seconds < 0 || seconds == saved) return;
+                enable(confirm, false);
+                final Context context = getApplicationContext();
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        boolean done;
+                        try {
+                            Record.get(context).setTextSeconds(seconds);
+                            done = true;
+                        } catch (RuntimeException error) {
+                            done = false;
+                        }
+                        final boolean stored = done;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isDestroyed()) return;
+                                if (stored) {
+                                    if (window != null) window.dismiss();
+                                    load();
+                                } else if (window != null) {
+                                    enable(confirm, true);
+                                    review.setText("That did not save.");
+                                }
+                            }
+                        });
+                    }
+                }).start();
+            }
+        }
+        final TextTime textTime = new TextTime();
+        textChange.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                textTime.open();
+            }
+        });
+        // The window goes with the screen, so Android has no window left behind.
+        textLine.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(View v) {}
+
+            @Override
+            public void onViewDetachedFromWindow(View v) {
+                if (textTime.window != null) textTime.window.dismiss();
+            }
+        });
+        textTime.load();
+
         heading("Look");
         column.addView(sub("Mode"), wide());
         LinearLayout modeRow = row();

@@ -18,7 +18,10 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
@@ -33,7 +36,8 @@ import java.util.Map;
 /**
  * The month screen: the month's call time and texts day by day, the month and pay period totals above the calendar and
  * All time below it. Tapping a day opens it; tapping a total lists it by contact; tapping the month's name picks another
- * month. Also asks for permission and starts the first run. Runs happen without this screen; it redraws when one finishes.
+ * month; a sideways swipe on the calendar moves one month, or one pay period when it starts on the pay period line. Also asks for permission and starts the first run. Runs happen
+ * without this screen; it redraws when one finishes.
  */
 public class MainActivity extends Screen {
     private static final int ASK = 1;
@@ -56,6 +60,8 @@ public class MainActivity extends Screen {
     /** The room inside a day cell for its time and texts, set by drawMonth. */
     private int lineRoom;
     private int asking;
+    /** The owner's time per text in seconds, 0 when off: shown under the totals, apart from call time. */
+    private int textSeconds;
 
     private LocalDate today;
     private YearMonth thisMonth;
@@ -181,8 +187,9 @@ public class MainActivity extends Screen {
         empty.setVisibility(View.GONE);
         column.addView(empty, gapBelow);
 
-        // The month's nav, totals, calendar and All time sit straight on the page, with no card around them.
-        LinearLayout monthCard = new LinearLayout(this);
+        // The month's nav, totals, calendar and All time sit straight on the page, with no card around them. A sideways
+        // swipe anywhere on them moves one month.
+        LinearLayout monthCard = new SwipeCard();
         monthCard.setOrientation(LinearLayout.VERTICAL);
         column.addView(monthCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
@@ -384,6 +391,95 @@ public class MainActivity extends Screen {
         return row;
     }
 
+    /**
+     * The month card: a sideways swipe on it moves one month, as the arrows do, or one pay period when it starts on the pay
+     * period line; taps and drags up and down go on as before.
+     */
+    private final class SwipeCard extends LinearLayout {
+        private final int slop = ViewConfiguration.get(MainActivity.this).getScaledTouchSlop();
+        private VelocityTracker speed;
+        private float downX;
+        private float downY;
+        private boolean swiping;
+        /** The touch started on the pay period line, so a swipe steps the pay period rather than the month. */
+        private boolean onPeriod;
+
+        SwipeCard() {
+            super(MainActivity.this);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent event) {
+            // Takes the touch from a day or a button only once it is plainly sideways, so a tap still opens what it hits.
+            watch(event);
+            return swiping;
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            // A touch nothing inside took, or one taken from inside: followed here until it ends. The page still scrolls
+            // when the finger moves up or down first.
+            watch(event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP && swiping) {
+                swiping = false;
+                turn(event);
+            }
+            return true;
+        }
+
+        private void watch(MotionEvent event) {
+            if (speed == null) speed = VelocityTracker.obtain();
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    speed.clear();
+                    downX = event.getX();
+                    downY = event.getY();
+                    swiping = false;
+                    onPeriod = periodLine.getVisibility() == View.VISIBLE && downX >= periodLine.getLeft() && downX < periodLine.getRight()
+                        && downY >= periodLine.getTop() && downY < periodLine.getBottom();
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    float dx = Math.abs(event.getX() - downX), dy = Math.abs(event.getY() - downY);
+                    if (!swiping && dx > slop && dx > 2 * dy) {
+                        swiping = true;
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                    swiping = false;
+                    break;
+                default:
+                    break;
+            }
+            speed.addMovement(event);
+        }
+
+        /** A long enough swipe, or a quick flick, moves one month or pay period: left for the next, right for the one before. */
+        private void turn(MotionEvent event) {
+            float dx = event.getX() - downX;
+            speed.computeCurrentVelocity(1000);
+            boolean far = Math.abs(dx) > dp(64) || (Math.abs(dx) > dp(24) && Math.abs(speed.getXVelocity()) > dp(600));
+            if (!far) return;
+            // The same limits as the arrows: never past this month or period, or before the first entry.
+            if (onPeriod) {
+                if (dx < 0 && periodNext.isEnabled()) stepPeriod(1);
+                else if (dx > 0 && periodPrev.isEnabled()) stepPeriod(-1);
+                return;
+            }
+            if (dx < 0 && next.isEnabled()) go(1);
+            else if (dx > 0 && prev.isEnabled()) go(-1);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (speed != null) {
+                speed.recycle();
+                speed = null;
+            }
+        }
+    }
+
     private void showRow(Button row, String label, Record.Totals totals) {
         SpannableStringBuilder text = new SpannableStringBuilder(label);
         text.setSpan(new CaptionSpan(), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -397,10 +493,13 @@ public class MainActivity extends Screen {
             text.setSpan(new AbsoluteSizeSpan(15, true), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             text.setSpan(new ForegroundColorSpan(txt), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             text.append(" · ").append(Words.plural(totals.calls, "call")).append(" · ").append(Words.plural(totals.texts, "text"));
+            // The texts' own time, when the owner gives each text some seconds: a line of its own, never in the call time.
+            if (textSeconds > 0) text.append("\nText time ").append(Words.textTime(totals.texts, textSeconds));
         }
         row.setText(text);
         row.setContentDescription(totals == null ? label : label + ", call time " + Words.fullTime(totals.callS) + ", "
-            + Words.plural(totals.calls, "call") + ", " + Words.plural(totals.texts, "text"));
+            + Words.plural(totals.calls, "call") + ", " + Words.plural(totals.texts, "text")
+            + (textSeconds > 0 ? ", text time " + Words.textTime(totals.texts, textSeconds) : ""));
     }
 
     @Override
@@ -828,6 +927,7 @@ public class MainActivity extends Screen {
         String problem;
         String lookMode;
         String lookTheme;
+        int textSeconds;
     }
 
     /** Asks the record away from the screen; an answer for a month or period no longer shown is dropped. */
@@ -850,6 +950,7 @@ public class MainActivity extends Screen {
                     found.period = PayPeriod.of(record.setting("pay_period_start"), record.setting("pay_period_days"));
                     found.lookMode = record.setting("look_mode");
                     found.lookTheme = record.setting("look_theme");
+                    found.textSeconds = record.textSeconds();
                     found.days = record.days(month.atDay(1).toString(), month.atEndOfMonth().toString());
                     found.monthTotals = record.totals(month.atDay(1).toString(), month.atEndOfMonth().toString());
                     found.all = record.totals();
@@ -890,6 +991,7 @@ public class MainActivity extends Screen {
         if (found.problem != null) return;
         earliest = found.earliest;
         empty.setVisibility(earliest == null && permissionText == null ? View.VISIBLE : View.GONE);
+        textSeconds = found.textSeconds;
         for (Map.Entry<String, LinearLayout> cell : cells.entrySet()) {
             fill(cell.getValue(), LocalDate.parse(cell.getKey()), found.days.get(cell.getKey()));
         }

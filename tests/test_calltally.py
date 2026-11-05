@@ -217,6 +217,9 @@ class AndroidRulesTests(RecordCase):
         self.assertEqual(rules["words-clock"], "17:06 1:08:17 0:59 0:00 10:00:00")
         self.assertEqual(rules["words-full"], "19m 43s | 1h 09m 39s | 47s | 1h 00m 00s")
         self.assertEqual(rules["words-counts"], "5 calls · 9 texts | 1 call · 1 text")
+        # 0.9.12: time per text, a rule the owner sets, shown apart from call time; texts x seconds in the full form.
+        self.assertEqual(rules["words-texttime"], "2m 15s | 1m 00s | 0s | 0s | 1h 40m 00s")
+        self.assertEqual(rules["words-textseconds"], "0 15 30 0 0 | off | 1 second | 15 seconds")
         self.assertEqual(rules["words-at"], "12:05 AM 12:30 PM 3:08 PM")
         self.assertEqual(rules["words-day"], "Tuesday, November 3, 2026 | Sun Oct 25 | Sun Jan 3, 2027")
         self.assertEqual(rules["words-status"].split(" | "), [

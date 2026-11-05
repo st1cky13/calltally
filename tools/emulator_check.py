@@ -1307,6 +1307,76 @@ def main():
         check("the seeded month's total and its busy day match the reference", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
         run.shot("10c-seeded-month")
+        # 0.9.12: a sideways swipe on the calendar moves one month, within the arrows' limits: right for the month before,
+        # left for the next. Each swipe runs across the grid from 20 to 80 percent of its width, starting on a day.
+        def swipe(ns, rightward):
+            (left, top), (right, bottom) = bounds(by_id(ns, "grid")[0])
+            y = (top + bottom) // 2
+            near, far = left + (right - left) // 5, left + (right - left) * 4 // 5
+            run.sh("input", "swipe", *((near, y, far, y) if rightward else (far, y, near, y)), 200)
+
+        before_title = (datetime.strptime(seeded, "%Y-%m") - timedelta(days=1)).strftime("%B %Y")
+        after_title = following.strftime("%B %Y")
+        can_back = [n.get("enabled") for n in by_id(nodes, "month_prev")] == ["true"]
+        can_on = [n.get("enabled") for n in by_id(nodes, "month_next")] == ["true"]
+        if by_id(nodes, "grid") and (can_back or can_on):
+            # Right then left when there is a month before the seeded one; otherwise left then right.
+            away, there = (True, before_title) if can_back else (False, after_title)
+            swipe(nodes, away)
+            nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == there, 15)
+            moved = text_of(nodes, "month_title")
+            check(f"a swipe {'right' if away else 'left'} on the calendar shows {'the month before' if away else 'the next month'}",
+                  moved == there, f"{moved!r} want {there!r}")
+            if by_id(nodes, "grid"):
+                swipe(nodes, not away)
+            nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title
+                                 and (text_of(ns, "total_month") or "").endswith(row_value(seeded_totals)), 15)
+            check(f"a swipe {'left' if away else 'right'} brings the seeded month back with its totals",
+                  text_of(nodes, "month_title") == seeded_title and text_of(nodes, "total_month").endswith(row_value(seeded_totals)),
+                  f"{text_of(nodes, 'month_title')!r} {text_of(nodes, 'total_month')!r}")
+        else:
+            print("info  skipped: the swipe checks, as the seeded month has no month on either side to swipe to")
+        nodes = back_to_seeded(nodes)
+
+        # 0.9.12: time per text, a rule set in Options. At 15 seconds the month row gets a third line, the seeded month's
+        # texts times 15 seconds, with its call time unchanged; it goes back to 0 after the day view and by-contact shots.
+        def set_text_time(seconds, want_line):
+            ns = run.wait_for(lambda n: bool(by_id(n, "gear")), 15)
+            run.tap(by_id(ns, "gear")[0])
+            ready = lambda n: [b.get("enabled") for b in by_id(n, "text_time_change")] == ["true"]
+            ns = run.wait_for(ready, 15)
+            if not ready(ns):
+                run.swipe_up()
+                ns = run.wait_for(ready, 15)
+            run.tap(by_id(ns, "text_time_change")[0])
+            ns = run.wait_for(lambda n: bool(by_id(n, "text_time_value")), 15)
+            run.tap(by_id(ns, "text_time_value")[0])
+            run.sh("input", "keyevent", "KEYCODE_MOVE_END", *["KEYCODE_DEL"] * 6)
+            run.sh("input", "text", str(seconds))
+            time.sleep(1)
+            # Hides the on-screen keyboard if it shows, so it covers nothing; Back with no keyboard would close the window.
+            if "mInputShown=true" in run.adb("shell", "dumpsys", "input_method", check=False):
+                run.sh("input", "keyevent", "KEYCODE_BACK")
+                time.sleep(1)
+            ns = run.wait_for(lambda n: [b.get("enabled") for b in by_id(n, "confirm")] == ["true"], 15)
+            said = text_of(ns, "text_time_review")
+            small, outside = screen_problems(ns, density)
+            if by_id(ns, "confirm"):
+                run.tap(by_id(ns, "confirm")[0])
+            ns = run.wait_for(lambda n: text_of(n, "text_time_line") == want_line and not by_id(n, "text_time_value"), 15)
+            shown = text_of(ns, "text_time_line")
+            run.sh("input", "keyevent", "KEYCODE_BACK")
+            return said, shown, small, outside
+
+        said, shown, small, outside = set_text_time(15, "Time per text: 15 seconds")
+        check("Time per text set to 15 in Options: the window reads off → 15 seconds and Options shows the new rule",
+              said == "Time per text: off → 15 seconds" and shown == "Time per text: 15 seconds" and not small and not outside,
+              f"{said!r} {shown!r} small {small[:3]} outside {outside[:3]}")
+        with_text = f"Month\n{row_value(seeded_totals)}\nText time {full_time(seeded_totals['texts'] * 15)}"
+        nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title and text_of(ns, "total_month") == with_text, 20)
+        check("at 15 seconds per text the month row adds the text time on its own line, its call time unchanged",
+              text_of(nodes, "total_month") == with_text, f"{text_of(nodes, 'total_month')!r} want {with_text!r}")
+        run.shot("13-text-time")
         # 0.9.8: a look at the busy day's own screen and at the month's people, for the screenshots only.
         cell = next((n for n in by_id(nodes, "day_cell") if n.get("content-desc") == words), None)
         if cell is not None:
@@ -1327,6 +1397,14 @@ def main():
             run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title, 15)
         else:
             print("info  skipped: the by-contact shot, as the month row was not found")
+        said, shown, _, _ = set_text_time(0, "Time per text: off")
+        nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title
+                             and text_of(ns, "total_month") == f"Month\n{row_value(seeded_totals)}", 20)
+        settings = dict(sqlite3.connect(f"file:{run.record() / DATABASE}?mode=ro", uri=True).execute("SELECT key,value FROM settings").fetchall())
+        check("Time per text back to 0: the window reads 15 seconds → off, and the month row loses its text time line",
+              said == "Time per text: 15 seconds → off" and shown == "Time per text: off"
+              and text_of(nodes, "total_month") == f"Month\n{row_value(seeded_totals)}" and settings.get("text_seconds") == "0",
+              f"{said!r} {shown!r} {text_of(nodes, 'total_month')!r} {settings.get('text_seconds')!r}")
         nodes = run.nodes()
         # The same month in dark, for a look at the busy day's tile; the screen is drawn again and keeps its month.
         try:
@@ -1342,6 +1420,42 @@ def main():
             run.adb("shell", "cmd", "uimode", "night", "no", check=False)
             time.sleep(3)
         nodes = run.nodes()
+
+        # 0.9.12: a sideways swipe that starts on the pay period line steps the pay period, within its arrows' limits.
+        # Periods starting the day after the seeded day leave the seeded day in the period before the current one, so
+        # there is a period to swipe back to; the Oct 25 start comes back afterwards.
+        after_seed = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        answer = run.pay(after_seed)
+        run.sh("am", "force-stop", APP)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: (text_of(ns, "total_period") or "").startswith("Pay period ")
+                             and [n.get("enabled") for n in by_id(ns, "period_prev")] == ["true"], 30)
+        if answer == "pay period set" and [n.get("enabled") for n in by_id(nodes, "period_prev")] == ["true"]:
+            def period_label(ns):
+                return (text_of(ns, "total_period") or "").split("\n")[0]
+
+            def swipe_period(ns, rightward):
+                (left, top), (right, bottom) = bounds(by_id(ns, "total_period")[0])
+                y = (top + bottom) // 2
+                near, far = left + (right - left) // 5, left + (right - left) * 4 // 5
+                run.sh("input", "swipe", *((near, y, far, y) if rightward else (far, y, near, y)), 200)
+
+            current_label, month_shown = period_label(nodes), text_of(nodes, "month_title")
+            swipe_period(nodes, True)
+            nodes = run.wait_for(lambda ns: period_label(ns).startswith("Pay period ") and period_label(ns) != current_label, 15)
+            earlier_label = period_label(nodes)
+            check("a swipe right on the pay period line shows the period before, and the month stays",
+                  earlier_label.startswith("Pay period ") and earlier_label != current_label and text_of(nodes, "month_title") == month_shown,
+                  f"{current_label!r} then {earlier_label!r}, month {text_of(nodes, 'month_title')!r} was {month_shown!r}")
+            swipe_period(nodes, False)
+            nodes = run.wait_for(lambda ns: period_label(ns) == current_label, 15)
+            check("a swipe left on the pay period line brings the current period back",
+                  period_label(nodes) == current_label and text_of(nodes, "month_title") == month_shown,
+                  f"{period_label(nodes)!r} want {current_label!r}")
+        else:
+            print(f"info  skipped: the pay period swipe checks, as no earlier period holds entries ({answer})")
+        answer = run.pay("2026-10-25")
+        check("pay period set back to the Oct 25 start through the test hook", answer == "pay period set", answer)
 
         # Who counts: Dana, unticked and no longer on the phone, shows unticked; a search with letters looks up names only.
         run.sh("input", "keyevent", "KEYCODE_BACK")
