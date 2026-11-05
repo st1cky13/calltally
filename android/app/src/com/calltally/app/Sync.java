@@ -51,7 +51,44 @@ final class Sync {
     }
 
     static String status(Context context) {
-        return prefs(context).getString("status", "Not run yet.");
+        SharedPreferences saved = prefs(context);
+        String text = saved.getString("status", "Not run yet.");
+        String schedule = saved.getString("schedule_problem", null);
+        String crash = saved.getString("crash", null);
+        if (schedule != null) text += "\n\nBackground uploads aren't set up: " + schedule;
+        if (crash != null) text += "\n\nLast crash: " + crash;
+        return text;
+    }
+
+    /** Keeps the reason for a crash for the screen to show. Only the error's type and this app's code location, nothing personal. */
+    static void noteCrashes(Context context) {
+        final Context app = context.getApplicationContext();
+        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        if (previous instanceof CrashNote) return;
+        Thread.setDefaultUncaughtExceptionHandler(new CrashNote(app, previous));
+    }
+
+    private static final class CrashNote implements Thread.UncaughtExceptionHandler {
+        private final Context context;
+        private final Thread.UncaughtExceptionHandler previous;
+
+        CrashNote(Context context, Thread.UncaughtExceptionHandler previous) {
+            this.context = context;
+            this.previous = previous;
+        }
+
+        @Override
+        public void uncaughtException(Thread thread, Throwable error) {
+            String where = "";
+            for (StackTraceElement frame : error.getStackTrace()) {
+                if (frame.getClassName().startsWith("com.calltally.app")) {
+                    where = " at " + frame.getFileName() + ":" + frame.getLineNumber();
+                    break;
+                }
+            }
+            prefs(context).edit().putString("crash", error.getClass().getSimpleName() + where).commit();
+            if (previous != null) previous.uncaughtException(thread, error);
+        }
     }
 
     static boolean neverRun(Context context) {
@@ -64,13 +101,19 @@ final class Sync {
     }
 
     static void schedule(Context context) {
-        JobScheduler jobs = context.getSystemService(JobScheduler.class);
-        ComponentName service = new ComponentName(context, SyncJob.class);
-        if (jobs.getPendingJob(JOB_PERIODIC) == null) {
-            jobs.schedule(new JobInfo.Builder(JOB_PERIODIC, service).setPeriodic(PERIOD_MS).setPersisted(true)
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).build());
+        try {
+            JobScheduler jobs = context.getSystemService(JobScheduler.class);
+            ComponentName service = new ComponentName(context, SyncJob.class);
+            if (jobs.getPendingJob(JOB_PERIODIC) == null) {
+                jobs.schedule(new JobInfo.Builder(JOB_PERIODIC, service).setPeriodic(PERIOD_MS).setPersisted(true)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).build());
+            }
+            if (jobs.getPendingJob(JOB_CHANGES) == null) scheduleChanges(context);
+            prefs(context).edit().remove("schedule_problem").apply();
+        } catch (RuntimeException error) {
+            // Uploading by hand still works, so this shows on the screen rather than closing the app.
+            prefs(context).edit().putString("schedule_problem", error.getClass().getSimpleName()).apply();
         }
-        if (jobs.getPendingJob(JOB_CHANGES) == null) scheduleChanges(context);
     }
 
     /** Wakes soon after a call or message is saved. Android runs this once per schedule, so each run sets up the next. */
@@ -80,7 +123,11 @@ final class Sync {
         for (Uri uri : new Uri[] {CallLog.Calls.CONTENT_URI, Uri.parse("content://sms"), Uri.parse("content://mms"), Uri.parse("content://mms-sms")}) {
             job.addTriggerContentUri(new JobInfo.TriggerContentUri(uri, JobInfo.TriggerContentUri.FLAG_NOTIFY_FOR_DESCENDANTS));
         }
-        context.getSystemService(JobScheduler.class).schedule(job.build());
+        try {
+            context.getSystemService(JobScheduler.class).schedule(job.build());
+        } catch (RuntimeException error) {
+            prefs(context).edit().putString("schedule_problem", error.getClass().getSimpleName()).apply();
+        }
     }
 
     /** The server said no, or couldn't be reached. Kept apart from a problem with this phone's own files. */
@@ -120,6 +167,7 @@ final class Sync {
                 + (skipped > 0 ? "\n" + skipped + " couldn't be used and were skipped." : "")
                 + "\n" + collector.groups() + " group chats with work contacts."
                 + (collector.conversationListWorked() ? "" : "\nConversation list unavailable, using messages instead."));
+            prefs(context).edit().remove("crash").apply();
         } catch (UploadProblem error) {
             note(context, error.refused ? "The server refused the upload. It will try again."
                 : "Couldn't reach the server. Is Tailscale on? It will try again.");

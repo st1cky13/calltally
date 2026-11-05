@@ -7,6 +7,7 @@ import android.app.job.JobService;
 public class SyncJob extends JobService {
     @Override
     public boolean onStartJob(final JobParameters params) {
+        Sync.noteCrashes(this);
         new Thread(new Runnable() {
             @Override
             public void run() {
