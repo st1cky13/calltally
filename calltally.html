@@ -176,7 +176,7 @@ function drawNav(){
 
 function fillCell(cell, data){
   const key = cell.dataset.day, today = todayKey();
-  const used = !!data && (data.calls + data.texts + data.deleted) > 0;
+  const used = !!data && (data.calls + data.unanswered + data.texts + data.deleted) > 0;
   cell.className = "day" + (used ? " filled" : "") + (key === today ? " today" : "") + (key > today ? " future" : "");
   cell.disabled = !used;
   const number = document.createElement("span");
@@ -201,9 +201,9 @@ function fillCell(cell, data){
   if (used && !data.calls && !data.texts){
     const x = document.createElement("span");
     x.className = "x";
-    x.textContent = "deleted";
+    x.textContent = data.unanswered ? "no answer" : "deleted";
     parts.push(x);
-    words.push("deleted entries only");
+    words.push(data.unanswered ? "calls not answered only" : "deleted entries only");
   }
   cell.replaceChildren(...parts);
   cell.setAttribute("aria-label", words.join(", "));
@@ -253,9 +253,12 @@ function go(by){
   load();
 }
 
+function connected(entry){return entry.kind === "call" && (entry.direction === "in" || entry.direction === "out") && entry.duration_s > 0;}
+
 function statusWords(entry){
-  const named = {in: "incoming", out: "outgoing", missed: "missed", rejected: "declined"}[entry.direction];
-  if (entry.kind === "call") return `${clock(entry.at)} · ${named} call`;
+  const named = entry.direction === "out" && !connected(entry) ? "outgoing call, no answer"
+    : `${{in: "incoming", out: "outgoing", missed: "missed", rejected: "declined"}[entry.direction]} call`;
+  if (entry.kind === "call") return `${clock(entry.at)} · ${named}`;
   return `${clock(entry.at)} · ${entry.direction === "in" ? "text received" : "text sent"}`;
 }
 
@@ -280,9 +283,9 @@ async function drawSheet(key){
   }
   if (openDay !== key) return;
   const live = data.entries.filter(e => !e.deleted_at);
-  const calls = live.filter(e => e.kind === "call");
+  const calls = live.filter(connected);
   const seconds = calls.reduce((sum, e) => sum + e.duration_s, 0);
-  const texts = live.length - calls.length;
+  const texts = live.filter(e => e.kind === "text").length;
   $("sheetTotals").textContent = `${fullTime(seconds)} on ${plural(calls.length, "call")} · ${plural(texts, "text")}`;
   $("none").hidden = data.entries.length > 0;
   $("rows").replaceChildren(...data.entries.map(entry => drawRow(entry, key)));
@@ -301,7 +304,7 @@ function drawRow(entry, key){
   info.append(who, what);
   const length = document.createElement("div");
   length.className = "len";
-  length.textContent = entry.kind === "call" ? fullTime(entry.duration_s) : "";
+  length.textContent = connected(entry) ? fullTime(entry.duration_s) : "";
   const action = document.createElement("button");
   action.type = "button";
   action.className = "btn";

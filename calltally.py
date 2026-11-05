@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -25,6 +25,8 @@ BACKUPS_KEPT = 14
 DIRECTIONS = {"call": {"in", "out", "missed", "rejected"}, "text": {"in", "out"}}
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+# Only a call that connected counts. Phones can log ringing time on a missed call, so its duration means nothing.
+CONNECTED = "(kind='call' AND direction IN ('in','out') AND duration_s>0)"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries(
@@ -186,8 +188,9 @@ class Store:
         try:
             rows = conn.execute(
                 "SELECT day,"
-                " COALESCE(SUM(CASE WHEN kind='call' AND deleted_at IS NULL THEN duration_s END),0) AS call_s,"
-                " COALESCE(SUM(kind='call' AND deleted_at IS NULL),0) AS calls,"
+                f" COALESCE(SUM(CASE WHEN {CONNECTED} AND deleted_at IS NULL THEN duration_s END),0) AS call_s,"
+                f" COALESCE(SUM({CONNECTED} AND deleted_at IS NULL),0) AS calls,"
+                f" COALESCE(SUM(kind='call' AND NOT {CONNECTED} AND deleted_at IS NULL),0) AS unanswered,"
                 " COALESCE(SUM(kind='text' AND deleted_at IS NULL),0) AS texts,"
                 " COALESCE(SUM(deleted_at IS NOT NULL),0) AS deleted"
                 " FROM entries WHERE day>=? AND day<=? GROUP BY day",
@@ -198,7 +201,7 @@ class Store:
         finally:
             conn.close()
         return {
-            "days": {row["day"]: {k: row[k] for k in ("call_s", "calls", "texts", "deleted")} for row in rows},
+            "days": {row["day"]: {k: row[k] for k in ("call_s", "calls", "unanswered", "texts", "deleted")} for row in rows},
             "earliest": earliest,
             "last_upload": last[0] if last else None,
         }

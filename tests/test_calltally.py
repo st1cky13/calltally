@@ -91,7 +91,18 @@ class StoreTests(ServerCase):
             entry(kind="text", epoch=1793000200, at="2026-11-04 09:03:20", duration_s=0),
         ]})
         day = self.get("/api/range?from=2026-11-01&to=2026-11-30")["days"]["2026-11-04"]
-        self.assertEqual(day, {"call_s": 90, "calls": 2, "texts": 1, "deleted": 0})
+        self.assertEqual(day, {"call_s": 90, "calls": 2, "unanswered": 0, "texts": 1, "deleted": 0})
+
+    def test_only_connected_calls_count(self):
+        self.post("/api/upload", {"entries": [
+            entry(duration_s=60),
+            entry(epoch=1793000100, at="2026-11-04 09:01:40", direction="missed", duration_s=12),
+            entry(epoch=1793000200, at="2026-11-04 09:03:20", direction="rejected", duration_s=5),
+            entry(epoch=1793000300, at="2026-11-04 09:05:00", direction="out", duration_s=0),
+        ]})
+        day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
+        self.assertEqual(day, {"call_s": 60, "calls": 1, "unanswered": 3, "texts": 0, "deleted": 0})
+        self.assertEqual(len(self.get("/api/day?day=2026-11-04")["entries"]), 4)
 
     def test_upload_twice_adds_once(self):
         first = self.post("/api/upload", {"entries": [entry()]})[1]
@@ -107,7 +118,7 @@ class StoreTests(ServerCase):
         row = self.get("/api/day?day=2026-11-04")["entries"][0]
         self.assertIsNotNone(row["deleted_at"])
         day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
-        self.assertEqual(day, {"call_s": 0, "calls": 0, "texts": 0, "deleted": 1})
+        self.assertEqual(day, {"call_s": 0, "calls": 0, "unanswered": 0, "texts": 0, "deleted": 1})
 
     def test_restore_counts_again(self):
         self.post("/api/upload", {"entries": [entry()]})
@@ -252,7 +263,7 @@ class PhoneTests(ServerCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("7 work entries found, 7 new", done.stdout)
         day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
-        self.assertEqual(day, {"call_s": 872 + 3968, "calls": 3, "texts": 2, "deleted": 0})
+        self.assertEqual(day, {"call_s": 872 + 3968, "calls": 2, "unanswered": 1, "texts": 2, "deleted": 0})
         rows = self.get("/api/day?day=2026-11-04")["entries"]
         self.assertEqual([r["at"] for r in rows], sorted(r["at"] for r in rows))
         target = next(r for r in rows if r["direction"] == "out" and r["kind"] == "call")
