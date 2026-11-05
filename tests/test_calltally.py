@@ -246,6 +246,100 @@ class StoreTests(ServerCase):
             self.assertIn(b'BASE="https://box.test:8444"', reply.read())
 
 
+class TotalsTests(ServerCase):
+    def load(self):
+        self.post("/api/upload", {"entries": [
+            entry(duration_s=60),
+            entry(epoch=1793000100, at="2026-11-04 09:01:40", direction="missed", duration_s=12),
+            entry(epoch=1793000200, at="2026-11-04 09:03:20", kind="text", duration_s=0),
+            entry(epoch=1793000300, at="2026-11-04 10:00:00", contact="Sam-Work", number="5552223333", duration_s=300),
+            entry(epoch=1793000400, at="2026-11-04 11:00:00", contact="Lee-Work", number="5553334444", kind="text", duration_s=0),
+            entry(epoch=1793000500, at="2026-11-04 11:01:00", contact="Lee-Work", number="5553334444", kind="text", duration_s=0),
+            entry(epoch=1793000600, at="2026-11-04 12:00:00", contact="Gone-Work", number="5554445555", duration_s=900),
+            entry(epoch=1792900000, at="2026-11-03 06:00:00", duration_s=40),
+            entry(epoch=1790000000, at="2026-10-01 06:00:00", contact="Sam-Work", number="5552223333", duration_s=1000),
+        ]})
+        gone = next(r for r in self.get("/api/day?day=2026-11-04")["entries"] if r["contact"] == "Gone-Work")
+        self.post("/api/delete", {"id": gone["id"]})
+
+    def test_totals_count_connected_calls_only_and_skip_deleted(self):
+        self.load()
+        self.assertEqual(self.get("/api/totals?from=2026-11-04&to=2026-11-04"), {"call_s": 360, "calls": 2, "texts": 3})
+        self.assertEqual(self.get("/api/totals?from=2026-11-01&to=2026-11-30"), {"call_s": 400, "calls": 3, "texts": 3})
+        self.assertEqual(self.get("/api/totals"), {"call_s": 1400, "calls": 4, "texts": 3})
+        self.assertEqual(self.get("/api/totals?from=2026-12-01&to=2026-12-31"), {"call_s": 0, "calls": 0, "texts": 0})
+
+    def test_contacts_grouped_and_sorted(self):
+        self.load()
+        rows = self.get("/api/contacts?from=2026-11-01&to=2026-11-30")["contacts"]
+        self.assertEqual(rows, [
+            {"contact": "Sam-Work", "call_s": 300, "calls": 1, "texts": 0},
+            {"contact": "Dana-Work", "call_s": 100, "calls": 2, "texts": 1},
+            {"contact": "Lee-Work", "call_s": 0, "calls": 0, "texts": 2},
+        ])
+        everything = self.get("/api/contacts")["contacts"]
+        self.assertEqual([r["contact"] for r in everything], ["Sam-Work", "Dana-Work", "Lee-Work"])
+        self.assertEqual(everything[0]["call_s"], 1300)
+        self.assertEqual(self.get("/api/contacts?from=2026-10-01&to=2026-10-31")["contacts"],
+                         [{"contact": "Sam-Work", "call_s": 1000, "calls": 1, "texts": 0}])
+
+    def test_contacts_ties_go_by_texts_then_name(self):
+        self.post("/api/upload", {"entries": [
+            entry(contact="Bee-Work", number="5550000001", kind="text", duration_s=0),
+            entry(epoch=1793000001, contact="Ann-Work", number="5550000002", kind="text", duration_s=0),
+            entry(epoch=1793000002, contact="Cat-Work", number="5550000003", kind="text", duration_s=0),
+            entry(epoch=1793000003, at="2026-11-04 09:00:03", contact="Cat-Work", number="5550000003", kind="text", duration_s=0),
+        ]})
+        rows = self.get("/api/contacts")["contacts"]
+        self.assertEqual([r["contact"] for r in rows], ["Cat-Work", "Ann-Work", "Bee-Work"])
+
+    def test_renamed_contact_is_one_line(self):
+        self.post("/api/upload", {"entries": [entry(), entry(epoch=1793000100, at="2026-11-04 09:01:40", duration_s=30)]})
+        self.post("/api/upload", {"entries": [entry(contact="Dana New-Work"),
+                                              entry(epoch=1793000100, at="2026-11-04 09:01:40", duration_s=30, contact="Dana New-Work")]})
+        self.assertEqual(self.get("/api/contacts")["contacts"], [{"contact": "Dana New-Work", "call_s": 90, "calls": 2, "texts": 0}])
+
+    def test_bad_dates_are_refused(self):
+        for query in ("?from=2026-11-01", "?to=2026-11-30", "?from=2026-02-30&to=2026-03-01", "?from=&to=", "?from=x&to=y"):
+            for path in ("/api/totals", "/api/contacts"):
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    self.get(path + query)
+                self.assertEqual(caught.exception.code, 400, path + query)
+                caught.exception.close()
+
+
+class SettingsTests(ServerCase):
+    def test_default(self):
+        self.assertEqual(self.get("/api/settings"), {"pay_period_start": "2026-10-25", "pay_period_days": 14})
+
+    def test_set_and_keep(self):
+        status, reply = self.post("/api/settings", {"pay_period_start": "2026-11-01"})
+        self.assertEqual((status, reply), (200, {"pay_period_start": "2026-11-01", "pay_period_days": 14}))
+        self.assertEqual(self.get("/api/settings"), reply)
+        again = calltally.Store(Path(self.temp) / "t.db")
+        self.assertEqual(again.settings(), reply)
+
+    def test_days_cannot_be_changed(self):
+        status, reply = self.post("/api/settings", {"pay_period_start": "2026-11-01", "pay_period_days": 7})
+        self.assertEqual((status, reply["pay_period_days"]), (200, 14))
+
+    def test_bad_date_refused(self):
+        for bad in ("2026-02-30", "11/01/2026", "", None, 20261101):
+            status, _ = self.post("/api/settings", {"pay_period_start": bad})
+            self.assertEqual(status, 400, bad)
+        self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
+
+    def test_other_site_and_plain_form_refused(self):
+        status, _ = self.post("/api/settings", {"pay_period_start": "2026-11-01"}, {"Origin": "https://evil.example"})
+        self.assertEqual(status, 403)
+        status, _ = self.post("/api/settings", None, {"Content-Type": "text/plain"}, raw=b'{"pay_period_start":"2026-11-01"}')
+        self.assertEqual(status, 400)
+        self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
+
+    def test_health_reports_version(self):
+        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.3.0"})
+
+
 class AndroidRulesTests(ServerCase):
     """The Android app's rules, run on a real JVM and sent to a real server."""
     TOOLS = Path.home() / "local" / "calltally-build" / "jdk" / "bin"

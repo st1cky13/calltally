@@ -32,8 +32,17 @@
   .nav{display:flex;align-items:center;gap:8px}
   .nav h2{margin:0;flex:1;text-align:center;font-size:17px}
   .nav .btn{width:44px;height:44px;padding:0;font-size:18px;font-weight:700}
-  #monthTotal{margin:8px 0 12px;text-align:center;color:var(--muted)}
-  #monthTotal b{color:var(--txt);font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .totals{display:grid;gap:6px;margin:8px 0 12px}
+  .total{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--tint);border:1px solid var(--line2);border-radius:8px;
+    padding:6px 10px;min-height:44px;width:100%;min-width:0;cursor:pointer;display:flex;flex-direction:column;justify-content:center}
+  .total:hover{border-color:var(--accent)}
+  .total .lbl{font-size:13px;color:var(--muted)}
+  .total .val{color:var(--muted);font-variant-numeric:tabular-nums}
+  .total .val b{color:var(--txt);font-size:17px;white-space:nowrap}
+  .total .val span{white-space:nowrap}
+  .period{display:flex;gap:6px;align-items:stretch}
+  .period .btn{width:40px;min-height:44px;padding:0;font-size:16px;font-weight:700;flex:none}
+  .note{margin:2px 0 0;color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
   .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
   .week{margin-bottom:4px;color:var(--muted);font-size:12px;text-align:center}
   .day{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--card2);border:1px solid transparent;border-radius:8px;
@@ -58,15 +67,26 @@
   .btn{font:inherit;font-size:14px;color:var(--txt);background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;min-height:36px;cursor:pointer;white-space:nowrap}
   .btn:disabled{opacity:.55;cursor:default}
   .foot{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + var(--sab))}
-  #close{display:block;width:100%;min-height:44px}
-  #rows{list-style:none;margin:0;padding:0}
-  #rows li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
-  #rows li:last-child{border-bottom:0}
+  .foot .btn{display:block;width:100%;min-height:44px}
+  .foot.two{display:flex;gap:8px}
+  .foot.two .btn{flex:1}
+  .rows{list-style:none;margin:0;padding:0}
+  .rows li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .rows li:last-child{border-bottom:0}
   .who{font-weight:600;overflow-wrap:anywhere}
   .what{color:var(--muted);font-size:13px}
   .len{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
   #rows li.gone .who,#rows li.gone .what,#rows li.gone .len{opacity:.55;text-decoration:line-through}
-  #none{padding:18px 14px;color:var(--muted);margin:0}
+  .none{padding:18px 14px;color:var(--muted);margin:0}
+  .cal{padding:10px 14px}
+  .cal .day,.cal .gap{min-height:44px;padding:4px;align-items:center;justify-content:center;cursor:pointer}
+  .cal .day .n{font-size:14px;color:var(--txt)}
+  .cal .day:hover{border-color:var(--accent)}
+  .cal .day.set{border-color:var(--accent);border-width:2px;padding:3px}
+  .cal .day.chosen{background:var(--accent);border-color:var(--accent)}
+  .cal .day.chosen .n{color:var(--accent-ink);font-weight:700}
+  #review{margin:0;padding:0 14px 12px}
+  #review b{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -80,7 +100,16 @@
       <h2 id="title" aria-live="polite"></h2>
       <button class="btn" id="next" type="button" aria-label="Next month">&gt;</button>
     </div>
-    <p id="monthTotal"></p>
+    <div class="totals">
+      <button class="total" id="tMonth" type="button"><span class="lbl"></span><span class="val"></span></button>
+      <div class="period">
+        <button class="btn" id="pPrev" type="button" aria-label="Previous pay period">&lt;</button>
+        <button class="total" id="tPeriod" type="button"><span class="lbl"></span><span class="val"></span></button>
+        <button class="btn" id="pNext" type="button" aria-label="Next pay period">&gt;</button>
+      </div>
+      <button class="total" id="tAll" type="button"><span class="lbl">All time</span><span class="val"></span></button>
+      <p class="note"><span id="periodNote"></span><button class="btn" id="change" type="button" hidden>Change</button></p>
+    </div>
     <div class="week" id="week"></div>
     <div class="grid" id="grid"></div>
   </section>
@@ -89,9 +118,37 @@
   <div class="head">
     <div><h2 id="sheetTitle"></h2><p id="sheetTotals"></p></div>
   </div>
-  <p id="none" hidden>Nothing on this day.</p>
-  <ul id="rows"></ul>
+  <p class="none" id="none" hidden>Nothing on this day.</p>
+  <ul class="rows" id="rows"></ul>
   <div class="foot"><button class="btn" id="close" type="button">Close</button></div>
+</dialog>
+<dialog id="people" aria-labelledby="peopleTitle">
+  <div class="head">
+    <div><h2 id="peopleTitle"></h2><p id="peopleTotals"></p></div>
+  </div>
+  <p class="none" id="peopleNone" hidden>Nothing in this time.</p>
+  <ul class="rows" id="peopleRows"></ul>
+  <div class="foot"><button class="btn" id="peopleClose" type="button">Close</button></div>
+</dialog>
+<dialog id="pick" aria-labelledby="pickTitle">
+  <div class="head">
+    <div><h2 id="pickTitle">Pay periods</h2><p id="pickNow"></p></div>
+  </div>
+  <div class="cal">
+    <div class="nav">
+      <button class="btn" id="calPrev" type="button" aria-label="Previous month">&lt;</button>
+      <h2 id="calTitle" aria-live="polite"></h2>
+      <button class="btn" id="calNext" type="button" aria-label="Next month">&gt;</button>
+    </div>
+    <div class="week" id="calWeek"></div>
+    <div class="grid" id="calGrid"></div>
+  </div>
+  <p id="review" aria-live="polite" hidden></p>
+  <div class="foot" id="pickOne"><button class="btn" id="pickClose" type="button">Close</button></div>
+  <div class="foot two" id="pickTwo" hidden>
+    <button class="btn" id="revert" type="button">Revert changes</button>
+    <button class="btn" id="confirm" type="button">Confirm</button>
+  </div>
 </dialog>
 <script>
 "use strict";
@@ -111,16 +168,16 @@ let openDay = null;
 let refreshAsked = 0;
 let monthLoaded = false;
 const cells = new Map();
+let settings = null;             // pay period start and length, from the server
+let periodK = null;              // the pay period on screen, counted from the start day
+let periodFollow = true;         // keeps the current pay period on screen as days pass
+let totalsAsked = 0;
+let monthTotals = null;          // what each row shows, for its sheet's header
+let periodTotals = null, allTotals = null;
 
 function todayKey(){const d = new Date(); return dayKey(d.getFullYear(), d.getMonth(), d.getDate());}
 function lastDayKey(y, m){return dayKey(y, m, new Date(y, m + 1, 0).getDate());}
 
-function shortTime(s){
-  if (s < 60) return `${s}s`;
-  const mins = Math.round(s / 60);
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${pad(mins % 60)}m`;
-}
 function fullTime(s){
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
   if (h) return `${h}h ${pad(m)}m ${pad(sec)}s`;
@@ -132,6 +189,28 @@ function clock(at){
   return `${h % 12 || 12}:${pad(m)} ${h < 12 ? "AM" : "PM"}`;
 }
 function plural(n, word){return `${n} ${word}${n === 1 ? "" : "s"}`;}
+
+// Whole days counted in UTC, so a change of clocks never moves a day.
+function dayNum(key){return Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8))) / 86400000;}
+function numKey(n){const d = new Date(n * 86400000); return dayKey(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());}
+function shortDay(key, withYear){
+  const text = `${MONTHS[Number(key.slice(5, 7)) - 1].slice(0, 3)} ${Number(key.slice(8))}`;
+  return withYear ? `${text}, ${key.slice(0, 4)}` : text;
+}
+function weekdayDay(key){
+  const year = key.slice(0, 4) !== todayKey().slice(0, 4);
+  return `${WEEK[new Date(dayNum(key) * 86400000).getUTCDay()]} ${shortDay(key, year)}`;
+}
+function currentPeriod(){return Math.floor((dayNum(todayKey()) - dayNum(settings.pay_period_start)) / settings.pay_period_days);}
+function periodRange(k){
+  const first = dayNum(settings.pay_period_start) + k * settings.pay_period_days;
+  return [numKey(first), numKey(first + settings.pay_period_days - 1)];
+}
+function periodLabel(k){
+  const [from, to] = periodRange(k), year = todayKey().slice(0, 4);
+  const showYear = from.slice(0, 4) !== year || to.slice(0, 4) !== year;
+  return `Pay period ${shortDay(from, showYear && from.slice(0, 4) !== to.slice(0, 4))} – ${shortDay(to, showYear)}`;
+}
 function showProblem(text){$("problem").textContent = text; $("problem").hidden = !text;}
 
 async function api(path, body){
@@ -144,16 +223,31 @@ async function api(path, body){
 function sameMonth(a, b){return a.y === b.y && a.m === b.m;}
 function shifted({y, m}, by){const d = new Date(y, m + by, 1); return {y: d.getFullYear(), m: d.getMonth()};}
 
-function showTotal(text){
-  const value = document.createElement("b");
-  value.textContent = text;
-  $("monthTotal").replaceChildren("Total call time: ", value);
+function showRow(id, label, totals, waiting){
+  const row = $(id);
+  if (label !== null) row.querySelector(".lbl").textContent = label;
+  const val = row.querySelector(".val");
+  if (!totals){
+    val.replaceChildren(waiting || "…");
+    row.setAttribute("aria-label", `${row.querySelector(".lbl").textContent}, ${waiting || "loading"}`);
+    return;
+  }
+  const time = document.createElement("b");
+  time.textContent = fullTime(totals.call_s);
+  const calls = document.createElement("span");
+  calls.textContent = plural(totals.calls, "call");
+  const texts = document.createElement("span");
+  texts.textContent = plural(totals.texts, "text");
+  val.replaceChildren(time, " · ", calls, " · ", texts);
+  row.setAttribute("aria-label", `${row.querySelector(".lbl").textContent}, call time ${fullTime(totals.call_s)}, `
+    + `${plural(totals.calls, "call")}, ${plural(totals.texts, "text")}`);
 }
+function showTotal(totals, waiting){monthTotals = totals; showRow("tMonth", MONTHS[view.m], totals, waiting);}
 
 function drawMonth(){
   const {y, m} = view;
   $("title").textContent = `${MONTHS[m]} ${y}`;
-  showTotal("…");
+  showTotal(null);
   monthLoaded = false;
   cells.clear();
   const parts = [];
@@ -192,7 +286,7 @@ function fillCell(cell, data){
   if (data && data.calls){
     const t = document.createElement("span");
     t.className = "t";
-    t.textContent = shortTime(data.call_s);
+    t.textContent = fullTime(data.call_s);   // exact, never rounded; wraps between units in a narrow cell
     parts.push(t);
     words.push(`call time ${fullTime(data.call_s)}`);
   }
@@ -236,20 +330,71 @@ async function refresh(){
   monthLoaded = true;
   earliest = data.earliest;
   for (const [key, cell] of cells) fillCell(cell, data.days[key] || null);
-  showTotal(fullTime(Object.values(data.days).reduce((sum, day) => sum + day.call_s, 0)));
+  const days = Object.values(data.days);
+  showTotal({call_s: days.reduce((sum, day) => sum + day.call_s, 0), calls: days.reduce((sum, day) => sum + day.calls, 0),
+             texts: days.reduce((sum, day) => sum + day.texts, 0)});
   $("empty").hidden = !!earliest;
   drawNav();
+  drawPeriodNav();
   showUpdated(data.last_upload);
   return true;
 }
 
-async function load(){
-  try {
-    if (await refresh()) showProblem("");
-  } catch (error){
-    showProblem(`Could not reach the server. ${error.message}`);
-    if (!monthLoaded) showTotal("not available");
+function drawPeriodNav(){
+  if (!settings){$("pPrev").disabled = $("pNext").disabled = true; return;}
+  $("pPrev").disabled = !earliest || periodRange(periodK - 1)[1] < earliest;
+  $("pNext").disabled = periodK >= currentPeriod();
+}
+
+function drawPeriodRow(){
+  if (!settings) return;
+  showRow("tPeriod", periodLabel(periodK), null);
+  $("periodNote").textContent = `Pay periods start ${weekdayDay(settings.pay_period_start)} and run two weeks`;
+  $("change").hidden = false;
+  drawPeriodNav();
+}
+
+async function refreshTotals(){
+  const mine = ++totalsAsked;
+  if (!settings){
+    const got = await api("/api/settings");
+    if (mine !== totalsAsked) return;
+    settings = got;
+    periodFollow = true;
   }
+  if (periodFollow) periodK = currentPeriod();
+  const k = periodK, [from, to] = periodRange(k);
+  const label = periodLabel(k);
+  if ($("tPeriod").querySelector(".lbl").textContent !== label) drawPeriodRow();
+  $("periodNote").textContent = `Pay periods start ${weekdayDay(settings.pay_period_start)} and run two weeks`;
+  $("change").hidden = false;
+  const [period, all] = await Promise.all([api(`/api/totals?from=${from}&to=${to}`), api("/api/totals")]);
+  if (mine !== totalsAsked) return;
+  periodTotals = {k, ...period};
+  allTotals = all;
+  showRow("tPeriod", label, period);
+  showRow("tAll", null, all);
+  drawPeriodNav();
+}
+
+async function load(){
+  const [month, totals] = await Promise.allSettled([refresh(), refreshTotals()]);
+  const failed = [month, totals].find(result => result.status === "rejected");
+  if (failed){
+    showProblem(`Could not reach the server. ${failed.reason.message}`);
+    if (!monthLoaded) showTotal(null, "not available");
+    if (totals.status === "rejected"){
+      if (!periodTotals || periodTotals.k !== periodK) showRow("tPeriod", null, null, "not available");
+      if (!allTotals) showRow("tAll", null, null, "not available");
+    }
+  } else if (month.value) showProblem("");
+}
+
+function stepPeriod(by){
+  periodK += by;
+  periodFollow = periodK === currentPeriod();
+  drawPeriodRow();
+  load();
 }
 
 function go(by){
@@ -260,10 +405,22 @@ function go(by){
 
 function connected(entry){return entry.kind === "call" && (entry.direction === "in" || entry.direction === "out") && entry.duration_s > 0;}
 
+function endWords(entry){
+  // A call that runs past midnight shows when it ended. Worked out from the start and length, on the local clock.
+  const [y, mo, d] = entry.at.slice(0, 10).split("-").map(Number);
+  const [h, mi, sec] = entry.at.slice(11).split(":").map(Number);
+  const end = new Date(y, mo - 1, d, h, mi, sec + entry.duration_s);
+  const endKey = dayKey(end.getFullYear(), end.getMonth(), end.getDate());
+  if (endKey === entry.at.slice(0, 10)) return "";
+  const time = clock(`${endKey} ${pad(end.getHours())}:${pad(end.getMinutes())}`);
+  return dayNum(endKey) - dayNum(entry.at.slice(0, 10)) === 1 ? ` · ended ${time}`
+    : ` · ended ${shortDay(endKey, endKey.slice(0, 4) !== entry.at.slice(0, 4))}, ${time}`;
+}
+
 function statusWords(entry){
   const named = entry.direction === "out" && !connected(entry) ? "outgoing call, no answer"
     : `${{in: "incoming", out: "outgoing", missed: "missed", rejected: "declined"}[entry.direction]} call`;
-  if (entry.kind === "call") return `${clock(entry.at)} · ${named}`;
+  if (entry.kind === "call") return `${clock(entry.at)} · ${named}${connected(entry) ? endWords(entry) : ""}`;
   return `${clock(entry.at)} · ${entry.direction === "in" ? "text received" : "text sent"}`;
 }
 
@@ -331,9 +488,151 @@ function drawRow(entry, key){
   return row;
 }
 
+// The sheet listing every contact or group for one of the three totals.
+const people = $("people");
+let peopleAsked = 0;
+
+async function openPeople(label, totals, from, to){
+  const mine = ++peopleAsked;
+  $("peopleTitle").textContent = label;
+  $("peopleTotals").textContent = totals ? `${fullTime(totals.call_s)} on ${plural(totals.calls, "call")} · ${plural(totals.texts, "text")}` : "";
+  $("peopleRows").replaceChildren();
+  $("peopleNone").hidden = true;
+  if (!people.open) people.showModal();
+  let data;
+  try {
+    data = await api(from ? `/api/contacts?from=${from}&to=${to}` : "/api/contacts");
+  } catch (error){
+    if (mine === peopleAsked) $("peopleTotals").textContent = `Could not load this. ${error.message}`;
+    return;
+  }
+  if (mine !== peopleAsked || !people.open) return;
+  $("peopleNone").hidden = data.contacts.length > 0;
+  $("peopleRows").replaceChildren(...data.contacts.map(item => {
+    const row = document.createElement("li");
+    const info = document.createElement("div");
+    const who = document.createElement("div");
+    who.className = "who";
+    who.textContent = item.contact;
+    const what = document.createElement("div");
+    what.className = "what";
+    what.textContent = `${plural(item.calls, "call")} · ${plural(item.texts, "text")}`;
+    info.append(who, what);
+    const length = document.createElement("div");
+    length.className = "len";
+    length.textContent = fullTime(item.call_s);
+    row.append(info, length);
+    return row;
+  }));
+}
+
+$("tMonth").addEventListener("click", () => {
+  const {y, m} = view;
+  openPeople(`${MONTHS[m]} ${y}`, monthTotals, dayKey(y, m, 1), lastDayKey(y, m));
+});
+$("tPeriod").addEventListener("click", () => {
+  if (!settings) return;
+  const [from, to] = periodRange(periodK);
+  openPeople(periodLabel(periodK), periodTotals && periodTotals.k === periodK ? periodTotals : null, from, to);
+});
+$("tAll").addEventListener("click", () => openPeople("All time", allTotals));
+$("pPrev").addEventListener("click", () => stepPeriod(-1));
+$("pNext").addEventListener("click", () => stepPeriod(1));
+
+// Changing the day pay periods start: a small calendar, then old → new with Revert changes and Confirm.
+const pick = $("pick");
+let calView = null, chosen = null;
+
+function openPick(){
+  if (!settings) return;
+  const start = settings.pay_period_start;
+  calView = {y: Number(start.slice(0, 4)), m: Number(start.slice(5, 7)) - 1};
+  chosen = null;
+  $("pickNow").textContent = `Pay periods start ${weekdayDay(start)} and run two weeks`;
+  drawReview();
+  drawCal();
+  if (!pick.open) pick.showModal();
+}
+
+function drawCal(){
+  const {y, m} = calView;
+  $("calTitle").textContent = `${MONTHS[m]} ${y}`;
+  const parts = [];
+  for (let i = new Date(y, m, 1).getDay(); i > 0; i--){const g = document.createElement("div"); g.className = "gap"; parts.push(g);}
+  const count = new Date(y, m + 1, 0).getDate();
+  for (let d = 1; d <= count; d++){
+    const key = dayKey(y, m, d);
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "day" + (key === settings.pay_period_start ? " set" : "") + (key === chosen ? " chosen" : "");
+    cell.setAttribute("aria-label", `${WEEKDAYS[new Date(y, m, d).getDay()]}, ${MONTHS[m]} ${d}, ${y}`);
+    cell.setAttribute("aria-pressed", String(key === chosen));
+    const number = document.createElement("span");
+    number.className = "n";
+    number.textContent = d;
+    cell.append(number);
+    cell.addEventListener("click", () => {
+      chosen = key === settings.pay_period_start ? null : key;
+      drawReview();
+      drawCal();
+    });
+    parts.push(cell);
+  }
+  $("calGrid").replaceChildren(...parts);
+  // From the month of the earliest data, or of the current start if that is earlier, up to this month.
+  const first = earliest && earliest < settings.pay_period_start ? earliest : settings.pay_period_start;
+  $("calPrev").disabled = dayKey(y, m, 1) <= first.slice(0, 8) + "01";
+  $("calNext").disabled = sameMonth(calView, thisMonth) || dayKey(y, m, 1) > dayKey(thisMonth.y, thisMonth.m, 1);
+}
+
+function drawReview(){
+  const review = $("review");
+  $("confirm").disabled = false;
+  if (!chosen){
+    review.hidden = true;
+    $("pickOne").hidden = false;
+    $("pickTwo").hidden = true;
+    return;
+  }
+  const old = document.createElement("b");
+  old.textContent = weekdayDay(settings.pay_period_start);
+  const now = document.createElement("b");
+  now.textContent = weekdayDay(chosen);
+  review.replaceChildren("Pay periods start: ", old, " → ", now);
+  review.hidden = false;
+  $("pickOne").hidden = true;
+  $("pickTwo").hidden = false;
+}
+
+$("change").addEventListener("click", openPick);
+$("calPrev").addEventListener("click", () => {calView = shifted(calView, -1); drawCal();});
+$("calNext").addEventListener("click", () => {calView = shifted(calView, 1); drawCal();});
+$("pickClose").addEventListener("click", () => pick.close());
+$("revert").addEventListener("click", () => {chosen = null; pick.close();});
+$("confirm").addEventListener("click", async () => {
+  $("confirm").disabled = true;
+  let saved;
+  try {
+    saved = await api("/api/settings", {pay_period_start: chosen});
+  } catch (error){
+    $("confirm").disabled = false;
+    $("review").textContent = `That did not save. ${error.message}`;
+    return;
+  }
+  settings = saved;
+  chosen = null;
+  periodFollow = true;
+  periodK = currentPeriod();
+  drawPeriodRow();
+  pick.close();
+  load();
+});
+
 $("close").addEventListener("click", () => sheet.close());
-sheet.addEventListener("click", event => {if (event.target === sheet) sheet.close();});
+$("peopleClose").addEventListener("click", () => people.close());
+for (const dialog of [sheet, people, pick]) dialog.addEventListener("click", event => {if (event.target === dialog) dialog.close();});
 sheet.addEventListener("close", () => {openDay = null;});
+pick.addEventListener("close", () => {chosen = null;});
 
 $("prev").addEventListener("click", () => go(-1));
 $("next").addEventListener("click", () => go(1));
@@ -353,7 +652,11 @@ function tick(){
 setInterval(tick, 60000);
 document.addEventListener("visibilitychange", () => {if (!document.hidden) tick();});
 
-for (const name of WEEK){const s = document.createElement("span"); s.textContent = name; $("week").append(s);}
+for (const name of WEEK){
+  for (const id of ["week", "calWeek"]){const s = document.createElement("span"); s.textContent = name; $(id).append(s);}
+}
+showRow("tPeriod", "Pay period", null);
+showRow("tAll", null, null);
 drawMonth();
 load();
 </script>

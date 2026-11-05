@@ -1,8 +1,10 @@
 # calltally
 
-A private calendar of work calls and texts. It opens on the current month, with arrows to move between months and that
-month's total call time at the top. Each day shows total call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted
-entries stay deleted and can be restored.
+A private calendar of work calls and texts. It opens on the current month, with arrows to move between months. At the
+top are three totals of call time, calls and texts: the month on screen, the pay period, and all time. The pay period has
+its own arrows, and the day pay periods start can be changed. Tap a total to see it by contact. Each day shows its exact
+call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted entries
+stay deleted and can be restored.
 
 An Android app finds calls and texts with contacts whose name ends in `-Work` and uploads them soon after they happen, and
 about every 15 minutes in case one is missed, including history already on the phone. It uploads the time, contact, number,

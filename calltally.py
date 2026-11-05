@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.2.2"
+VERSION = "0.3.0"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -27,6 +27,11 @@ DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 # Only a call that connected counts. Phones can log ringing time on a missed call, so its duration means nothing.
 CONNECTED = "(kind='call' AND direction IN ('in','out') AND duration_s>0)"
+# Counted the same way as each day on the month view: connected calls only, deleted entries never.
+TOTALS = (f"COALESCE(SUM(CASE WHEN {CONNECTED} AND deleted_at IS NULL THEN duration_s END),0) AS call_s,"
+          f" COALESCE(SUM({CONNECTED} AND deleted_at IS NULL),0) AS calls,"
+          " COALESCE(SUM(kind='text' AND deleted_at IS NULL),0) AS texts")
+SETTINGS_DEFAULT = {"pay_period_start": "2026-10-25", "pay_period_days": "14"}
 
 # Lets a phone install the page with its own icon. No service worker, on purpose: this page is only ever live data.
 MANIFEST = {
@@ -219,6 +224,66 @@ class Store:
             "last_upload": last[0] if last else None,
         }
 
+    @staticmethod
+    def span(start, end):
+        # No dates means all time. Either one alone is refused, so a typo can't quietly widen the range.
+        if start is None and end is None:
+            return "", ()
+        if not is_real_day(start) or not is_real_day(end):
+            raise BadRequest("bad date")
+        return " AND day>=? AND day<=?", (start, end)
+
+    def totals(self, start=None, end=None):
+        where, args = self.span(start, end)
+        conn = self.connect()
+        try:
+            row = conn.execute(f"SELECT {TOTALS} FROM entries WHERE 1=1{where}", args).fetchone()
+        finally:
+            conn.close()
+        return {k: row[k] for k in ("call_s", "calls", "texts")}
+
+    def contacts(self, start=None, end=None):
+        # Grouped by name: a repeat upload refreshes old rows to the current name, so a renamed contact stays one line.
+        where, args = self.span(start, end)
+        conn = self.connect()
+        try:
+            rows = conn.execute(
+                f"SELECT contact, {TOTALS} FROM entries WHERE deleted_at IS NULL{where} GROUP BY contact "
+                "ORDER BY call_s DESC, texts DESC, contact",
+                args,
+            ).fetchall()
+        finally:
+            conn.close()
+        return {"contacts": [{k: row[k] for k in ("contact", "call_s", "calls", "texts")} for row in rows]}
+
+    def settings(self):
+        conn = self.connect()
+        try:
+            rows = conn.execute(
+                "SELECT key,value FROM meta WHERE key IN ('pay_period_start','pay_period_days')").fetchall()
+        finally:
+            conn.close()
+        found = {**SETTINGS_DEFAULT, **{row["key"]: row["value"] for row in rows}}
+        return {"pay_period_start": found["pay_period_start"], "pay_period_days": int(found["pay_period_days"])}
+
+    def set_settings(self, payload):
+        start = payload.get("pay_period_start")
+        if not is_real_day(start):
+            raise BadRequest("bad date")
+        conn = self.connect()
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO meta(key,value) VALUES('pay_period_start',?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (start,),
+                )
+                conn.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('pay_period_days',?)",
+                             (SETTINGS_DEFAULT["pay_period_days"],))
+        finally:
+            conn.close()
+        return self.settings()
+
     def day(self, day):
         if not is_real_day(day):
             raise BadRequest("bad date")
@@ -299,7 +364,7 @@ def make_handler(store):
 
         def do_GET(self):
             url = urlparse(self.path)
-            query = parse_qs(url.query)
+            query = parse_qs(url.query, keep_blank_values=True)
             try:
                 if url.path == "/":
                     self.send_file("calltally.html", "text/html; charset=utf-8")
@@ -309,6 +374,13 @@ def make_handler(store):
                     self.send_file(url.path.lstrip("/"), "image/png")
                 elif url.path == "/api/range":
                     self.send_json(200, store.range(query.get("from", [""])[0], query.get("to", [""])[0]))
+                elif url.path in ("/api/totals", "/api/contacts"):
+                    start = query.get("from", [None])[0]
+                    end = query.get("to", [None])[0]
+                    method = store.totals if url.path == "/api/totals" else store.contacts
+                    self.send_json(200, method(start, end))
+                elif url.path == "/api/settings":
+                    self.send_json(200, store.settings())
                 elif url.path == "/api/day":
                     self.send_json(200, store.day(query.get("day", [""])[0]))
                 elif url.path == "/api/health":
@@ -364,6 +436,8 @@ def make_handler(store):
                 elif path in ("/api/delete", "/api/restore"):
                     store.set_deleted(payload.get("id"), path == "/api/delete")
                     self.send_json(200, {"ok": True})
+                elif path == "/api/settings":
+                    self.send_json(200, store.set_settings(payload))
                 else:
                     self.send_json(404, {"error": "not found"})
             except BadRequest as error:
