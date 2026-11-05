@@ -8,8 +8,8 @@ stay deleted and can be restored.
 
 An Android app finds calls and texts with contacts whose name ends in `-Work` and uploads them soon after they happen, and
 about every 15 minutes in case one is missed, including history already on the phone. It uploads the time, contact, number,
-direction and call length. It never reads what a text said or uploads anything about other contacts, except that a group
-with a work contact shows how many other people are in it.
+direction and call length, and a short line saying whether its last run went well. It never reads what a text said or
+uploads anything about other contacts, except that a group with a work contact shows how many other people are in it.
 
 ## Server
 
@@ -25,7 +25,10 @@ result in the server's data folder as `calltally.apk`, and download it on the ph
    Call Tally Sync, choose the three-dot menu, and pick "Allow restricted settings".
 2. Set its battery use to unrestricted, and turn off "remove permissions if app is unused".
 
-The page's "Updated" label turns yellow if the phone hasn't uploaded for three hours. The app's screen shows the last result.
+The page's "Updated" label turns yellow if the phone hasn't uploaded for three hours, and red after a full day. If the
+phone has a problem, such as texts it can't read, the page shows it in one line under the header, and calls still upload.
+That line holds no names, numbers or counts. The app's screen shows the last result in full, including how many work
+calls it skipped for being another kind, such as voicemail.
 
 Termux and `phone/calltally-phone.py` are the older way to upload. Entries match, so moving between them adds no copies.
 

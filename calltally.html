@@ -25,8 +25,9 @@
   header b{font-size:16px;letter-spacing:.02em}
   #updated{margin-left:auto;font-size:14px;border-radius:20px;padding:2px 10px;white-space:nowrap}
   #updated.stale{background:#f3c25a;color:#2b1d00;font-weight:600}
+  #updated.late{background:#c23a3a;color:#fff;font-weight:600}
   main{max-width:900px;margin:0 auto;padding:12px 16px calc(40px + var(--sab));display:grid;gap:14px}
-  #problem{background:var(--loss-t);color:var(--loss);border:1px solid var(--loss);border-radius:10px;padding:8px 12px}
+  #problem,#phone{background:var(--loss-t);color:var(--loss);border:1px solid var(--loss);border-radius:10px;padding:8px 12px}
   #empty{color:var(--muted);text-align:center;padding:4px}
   .month{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;min-width:0}
   .nav{display:flex;align-items:center;gap:8px}
@@ -97,6 +98,7 @@
 <body>
 <header><b>Call Tally</b><span id="updated"></span></header>
 <main id="main">
+  <div id="phone" hidden></div>
   <div id="problem" hidden></div>
   <div id="empty" hidden>No work calls or texts yet.</div>
   <section class="month">
@@ -332,8 +334,9 @@ function showUpdated(last){
   const mins = Math.max(0, Math.round((Date.now() - new Date(last).getTime()) / 60000));
   el.textContent = mins < 1 ? "Updated just now" : mins < 60 ? `Updated ${mins} min ago`
     : mins < 2880 ? `Updated ${Math.round(mins / 60)} hr ago` : `Updated ${Math.round(mins / 1440)} days ago`;
-  el.className = mins > 180 ? "stale" : "";
+  el.className = mins >= 1440 ? "late" : mins > 180 ? "stale" : "";
 }
+function showPhone(text){$("phone").textContent = text ? `Phone: ${text}` : ""; $("phone").hidden = !text;}
 
 async function refresh(){
   const mine = ++refreshAsked, {y, m} = view;
@@ -355,6 +358,7 @@ async function refresh(){
   drawNav();
   drawPeriodNav();
   showUpdated(data.last_upload);
+  showPhone(data.phone_status);
   return true;
 }
 

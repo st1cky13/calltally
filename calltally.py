@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -32,6 +32,7 @@ TOTALS = (f"COALESCE(SUM(CASE WHEN {CONNECTED} AND deleted_at IS NULL THEN durat
           f" COALESCE(SUM({CONNECTED} AND deleted_at IS NULL),0) AS calls,"
           " COALESCE(SUM(kind='text' AND deleted_at IS NULL),0) AS texts")
 SETTINGS_DEFAULT = {"pay_period_start": "2026-10-25", "pay_period_days": "14"}
+MAX_STATUS = 200
 
 # Lets a phone install the page with its own icon. No service worker, on purpose: this page is only ever live data.
 MANIFEST = {
@@ -215,14 +216,38 @@ class Store:
                 (start, end),
             ).fetchall()
             earliest = conn.execute("SELECT MIN(day) FROM entries").fetchone()[0]
-            last = conn.execute("SELECT value FROM meta WHERE key='last_upload'").fetchone()
+            meta = dict(conn.execute(
+                "SELECT key,value FROM meta WHERE key IN ('last_upload','phone_status','phone_status_at')").fetchall())
         finally:
             conn.close()
         return {
             "days": {row["day"]: {k: row[k] for k in ("call_s", "calls", "unanswered", "texts", "deleted")} for row in rows},
             "earliest": earliest,
-            "last_upload": last[0] if last else None,
+            "last_upload": meta.get("last_upload"),
+            "phone_status": meta.get("phone_status"),
+            "phone_status_at": meta.get("phone_status_at"),
         }
+
+    def set_status(self, payload):
+        # The phone's last problem, in one plain sentence, or empty when its run was fine. It is not an upload, so it
+        # never moves last_upload: a phone that can talk to the server but can't read its records still shows as late.
+        text = payload.get("text")
+        if not isinstance(text, str) or len(text) > MAX_STATUS or any(ord(c) < 0x20 or c == "\x7f" for c in text):
+            raise BadRequest("bad status")
+        text = text.strip()
+        conn = self.connect()
+        try:
+            with conn:
+                if text:
+                    conn.executemany(
+                        "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (("phone_status", text), ("phone_status_at", now_iso())),
+                    )
+                else:
+                    conn.execute("DELETE FROM meta WHERE key IN ('phone_status','phone_status_at')")
+        finally:
+            conn.close()
+        return {"ok": True}
 
     @staticmethod
     def span(start, end):
@@ -439,6 +464,8 @@ def make_handler(store):
                     self.send_json(200, {"ok": True})
                 elif path == "/api/settings":
                     self.send_json(200, store.set_settings(payload))
+                elif path == "/api/status":
+                    self.send_json(200, store.set_status(payload))
                 else:
                     self.send_json(404, {"error": "not found"})
             except BadRequest as error:

@@ -349,7 +349,68 @@ class SettingsTests(ServerCase):
         self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
 
     def test_health_reports_version(self):
-        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.3.0"})
+        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.4.0"})
+
+
+class StatusTests(ServerCase):
+    def status(self):
+        reply = self.get("/api/range?from=2026-11-01&to=2026-11-30")
+        return reply["phone_status"], reply["phone_status_at"], reply["last_upload"]
+
+    def test_none_at_first(self):
+        self.assertEqual(self.status(), (None, None, None))
+
+    def test_set_shows_in_range_and_clear_removes_it(self):
+        status, reply = self.post("/api/status", {"text": "No contacts ending in -Work were found."})
+        self.assertEqual((status, reply), (200, {"ok": True}))
+        text, at, _ = self.status()
+        self.assertEqual(text, "No contacts ending in -Work were found.")
+        self.assertRegex(at, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertEqual(self.post("/api/status", {"text": "Texts couldn't be read. Android returned no messages."})[0], 200)
+        self.assertEqual(self.status()[0], "Texts couldn't be read. Android returned no messages.")
+        self.assertEqual(self.post("/api/status", {"text": ""}), (200, {"ok": True}))
+        self.assertEqual(self.status()[:2], (None, None))
+        self.assertEqual(self.post("/api/status", {"text": "Oops."})[0], 200)
+        self.assertEqual(self.post("/api/status", {"text": "   "})[0], 200)
+        self.assertEqual(self.status()[:2], (None, None))
+
+    def test_never_changes_last_upload(self):
+        self.post("/api/status", {"text": "Android returned no messages."})
+        self.post("/api/status", {"text": ""})
+        self.assertIsNone(self.status()[2])
+        self.post("/api/upload", {"entries": [entry()]})
+        before = self.status()[2]
+        self.assertIsNotNone(before)
+        conn = self.store.connect()
+        with conn:
+            conn.execute("UPDATE meta SET value='2026-01-01T00:00:00Z' WHERE key='last_upload'")
+        conn.close()
+        self.post("/api/status", {"text": "Android returned no messages."})
+        self.post("/api/status", {"text": ""})
+        self.assertEqual(self.status()[2], "2026-01-01T00:00:00Z")
+
+    def test_upload_leaves_status_alone(self):
+        self.post("/api/status", {"text": "Android returned no messages."})
+        self.post("/api/upload", {"entries": [entry()]})
+        self.assertEqual(self.status()[0], "Android returned no messages.")
+
+    def test_other_site_refused(self):
+        status, _ = self.post("/api/status", {"text": "Hello."}, {"Origin": "https://evil.example"})
+        self.assertEqual(status, 403)
+        status, _ = self.post("/api/status", None, {"Content-Type": "text/plain"}, raw=b'{"text":"Hello."}')
+        self.assertEqual(status, 400)
+        self.assertIsNone(self.status()[0])
+
+    def test_too_long_or_bad_text_refused(self):
+        self.post("/api/status", {"text": "Kept."})
+        for bad in ("x" * 201, "two\nlines", "two\rlines", "tab\there", None, 5, ["x"]):
+            status, _ = self.post("/api/status", {"text": bad})
+            self.assertEqual(status, 400, bad)
+        status, _ = self.post("/api/status", {})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.status()[0], "Kept.")
+        self.assertEqual(self.post("/api/status", {"text": "x" * 200})[0], 200)
+        self.assertEqual(self.status()[0], "x" * 200)
 
 
 class AndroidRulesTests(ServerCase):
@@ -377,6 +438,18 @@ class AndroidRulesTests(ServerCase):
         self.assertEqual(rules["names"], "truetruefalsefalsefalse")
         self.assertEqual(rules["acceptable"], "falsefalsefalsetrue")
         self.assertEqual(rules["seconds"], "1793000000 1793000000 1793000000")
+
+    def test_status_line_is_one_line_and_accepted(self):
+        rules = self.run_rules()
+        self.assertEqual(json.loads(rules["status"]), {"text": 'Texts couldn\'t be read. Android returned "no" messages.'})
+        self.assertEqual(json.loads(rules["status-empty"]), {"text": ""})
+        self.assertEqual(len(json.loads(rules["status-long"])["text"]), 200)
+        for key in ("status", "status-long"):
+            status, _ = self.post("/api/status", None, raw=rules[key].encode())
+            self.assertEqual(status, 200, key)
+        self.assertEqual(len(self.get("/api/range?from=2026-11-01&to=2026-11-30")["phone_status"]), 200)
+        self.assertEqual(self.post("/api/status", None, raw=rules["status-empty"].encode())[0], 200)
+        self.assertIsNone(self.get("/api/range?from=2026-11-01&to=2026-11-30")["phone_status"])
 
     def test_upload_is_accepted_and_matches_earlier_termux_entries(self):
         rules = self.run_rules()

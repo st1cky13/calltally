@@ -148,7 +148,11 @@ final class Sync {
         }
     }
 
-    /** One run. Nothing checks in with the server unless everything could be read, so a problem shows on the page as out of date. */
+    /**
+     * One run. Calls and texts go up when they could be read, even if the other part couldn't. Then the run's result goes
+     * to the page as one plain sentence, or an empty one when all went well. A run that couldn't reach the server sends
+     * nothing, so the page shows it only as out of date.
+     */
     static boolean run(Context context) {
         return run(context, false);
     }
@@ -156,9 +160,12 @@ final class Sync {
     /** Returns false if another run was already going, so this one did nothing. */
     static boolean run(Context context, boolean everything) {
         if (!RUNNING.compareAndSet(false, true)) return false;
+        // What the page is told at the end. Null sends nothing.
+        String report = null;
         try {
             if (!allowed(context)) {
-                note(context, "Needs permission. Open this app to allow it.");
+                report = "Needs permission. Open this app to allow it.";
+                note(context, report);
                 return true;
             }
             if (everything) new File(context.getFilesDir(), SENT_FILE).delete();
@@ -172,27 +179,74 @@ final class Sync {
                 if (!entry.acceptable()) skipped++;
                 else if (!sent.contains(hash(entry.key()))) fresh.add(entry);
             }
-            upload(context, fresh);
+            String problem = collector.problem();
+            int other = collector.otherCalls();
+            String otherLine = other == 0 ? "" : other == 1 ? "\nSkipped 1 call of another kind." : "\nSkipped " + other + " calls of other kinds.";
+            try {
+                upload(context, fresh);
+            } catch (UploadProblem error) {
+                // The part that couldn't be read still shows, so the screen matches what the page is told later.
+                String text = uploadProblem(error);
+                note(context, text + (problem.isEmpty() ? "" : "\n" + problem));
+                if (error.refused) report = text;
+                return true;
+            }
             note(context, (found.size() - skipped) + " work calls and texts found, " + fresh.size() + " sent this time."
+                + (problem.isEmpty() ? "" : "\n" + problem)
                 + (skipped > 0 ? "\n" + skipped + " couldn't be used and were skipped." : "")
+                + otherLine
                 + "\n" + collector.groups() + " group chats with work contacts."
                 + (collector.conversationListWorked() ? "" : "\nConversation list unavailable, using messages instead."));
+            report = problem;
             prefs(context).edit().remove("crash").apply();
-        } catch (UploadProblem error) {
-            note(context, error.refused ? "The server refused the upload. It will try again."
-                : "Couldn't reach the server. Is Tailscale on? It will try again.");
         } catch (IOException error) {
-            note(context, "Couldn't read this app's own records. It will try again.");
+            report = "Couldn't read this app's own records. It will try again.";
+            note(context, report);
         } catch (SecurityException error) {
-            note(context, "Needs permission. Open this app to allow it.");
+            report = "Needs permission. Open this app to allow it.";
+            note(context, report);
         } catch (Collector.Problem error) {
-            note(context, error.getMessage());
+            report = error.getMessage();
+            note(context, report);
         } catch (RuntimeException error) {
-            note(context, "Something went wrong: " + error.getClass().getSimpleName());
+            report = "Something went wrong: " + error.getClass().getSimpleName();
+            note(context, report);
         } finally {
-            RUNNING.set(false);
+            try {
+                if (report != null) sendStatus(report);
+            } finally {
+                RUNNING.set(false);
+            }
         }
         return true;
+    }
+
+    private static String uploadProblem(UploadProblem error) {
+        return error.refused ? "The server refused the upload. It will try again."
+            : "Couldn't reach the server. Is Tailscale on? It will try again.";
+    }
+
+    /** Tells the page how the run went. Never a name, number or count. If it can't get through, the next run tries again. */
+    private static void sendStatus(String text) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(Config.SERVER + "/api/status").openConnection();
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(15000);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            byte[] bytes = Rules.statusBody(text).getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(bytes);
+            }
+            connection.getResponseCode();
+        } catch (IOException | RuntimeException error) {
+            // The status is only a note for the page. Failing to send it must never change the run's result.
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     private static void upload(Context context, List<Rules.Entry> fresh) throws IOException, UploadProblem {

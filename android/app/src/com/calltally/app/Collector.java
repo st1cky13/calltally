@@ -32,6 +32,9 @@ final class Collector {
     private final Map<Long, List<String>> threadPeople = new HashMap<>();
     private final Map<Long, Rules.Who> threadWho = new HashMap<>();
     private boolean conversationList = true;
+    private String callsProblem;
+    private String textsProblem;
+    private int otherCalls;
 
     Collector(Context context) {
         resolver = context.getContentResolver();
@@ -55,17 +58,54 @@ final class Collector {
         return index;
     }
 
+    /**
+     * Without contacts nothing can be matched, so that stops the run. Calls and texts are read apart: when one can't be
+     * read the other still goes up, and problem() says which part is missing. Each part is all or nothing.
+     */
     List<Rules.Entry> collect() {
         readContacts();
-        readThreads();
-        Map<Long, List<String>> fallback = peopleFromMessages();
-        threadPeople.putAll(fallback);
         List<Rules.Entry> entries = new ArrayList<>();
-        readCalls(entries);
-        int messages = readSms(entries) + readMms(entries);
-        // A phone that suddenly shows no messages is having a problem. Reporting that keeps the page from looking healthy.
-        if (messages == 0) throw new Problem("Android returned no messages.");
+        try {
+            List<Rules.Entry> calls = new ArrayList<>();
+            otherCalls = readCalls(calls);
+            entries.addAll(calls);
+        } catch (RuntimeException error) {
+            otherCalls = 0;
+            callsProblem = reason(error, "calls");
+        }
+        try {
+            List<Rules.Entry> texts = new ArrayList<>();
+            readThreads();
+            threadPeople.putAll(peopleFromMessages());
+            int messages = readSms(texts) + readMms(texts);
+            // A phone that suddenly shows no messages is having a problem. Reporting that keeps the page from looking healthy.
+            if (messages == 0) throw new Problem("Android returned no messages.");
+            entries.addAll(texts);
+        } catch (RuntimeException error) {
+            threadWho.clear();
+            textsProblem = reason(error, "texts");
+        }
+        if (callsProblem != null && textsProblem != null) throw new Problem(callsProblem + " " + textsProblem);
         return entries;
+    }
+
+    /** A refused permission stops the whole run as before. Anything else is a part of the phone this app can't read. */
+    private static String reason(RuntimeException error, String what) {
+        if (error instanceof SecurityException) throw error;
+        if (error instanceof Problem) return error.getMessage();
+        return "This phone stores " + what + " in a way this app doesn't know.";
+    }
+
+    /** The part that couldn't be read, in one plain sentence for the screen and the page, or empty when all was read. */
+    String problem() {
+        if (callsProblem != null) return "Calls couldn't be read. " + callsProblem;
+        if (textsProblem != null) return "Texts couldn't be read. " + textsProblem;
+        return "";
+    }
+
+    /** Calls with work contacts that were left out for their kind, such as voicemail or blocked calls. */
+    int otherCalls() {
+        return otherCalls;
     }
 
     boolean conversationListWorked() {
@@ -122,7 +162,8 @@ final class Collector {
         conversationList = !threadPeople.isEmpty();
     }
 
-    private void readCalls(List<Rules.Entry> entries) {
+    private int readCalls(List<Rules.Entry> entries) {
+        int other = 0;
         String[] columns = {CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.TYPE, CallLog.Calls.DURATION};
         try (Cursor cursor = open(CallLog.Calls.CONTENT_URI, columns, "call log")) {
             while (cursor.moveToNext()) {
@@ -135,11 +176,12 @@ final class Collector {
                     case CallLog.Calls.OUTGOING_TYPE: direction = "out"; break;
                     case CallLog.Calls.MISSED_TYPE: direction = "missed"; break;
                     case CallLog.Calls.REJECTED_TYPE: direction = "rejected"; break;
-                    default: continue;
+                    default: other++; continue;
                 }
                 entries.add(new Rules.Entry("call", cursor.getLong(1) / 1000L, name, number, direction, cursor.getLong(3)));
             }
         }
+        return other;
     }
 
     private int readSms(List<Rules.Entry> entries) {

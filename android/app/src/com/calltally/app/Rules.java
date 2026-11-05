@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 final class Rules {
     private static final Pattern WORK_NAME = Pattern.compile("-\\s*Work\\s*$");
     private static final int MAX_CONTACT = 190;
+    private static final int MAX_STATUS = 200;
     // The start of the year 10000, past which the server can't read the time.
     private static final long MAX_EPOCH = 253402300800L;
 
@@ -121,6 +122,13 @@ final class Rules {
             out.append(entries.get(i).json());
         }
         return out.append("]}").toString();
+    }
+
+    /** The run's result for the page: one line, at most the server's 200 characters. Empty means the run was fine. */
+    static String statusBody(String text) {
+        String line = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        if (line.length() > MAX_STATUS) line = line.substring(0, MAX_STATUS);
+        return "{\"text\":" + quote(line) + "}";
     }
 
     static String quote(String text) {

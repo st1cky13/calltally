@@ -26,6 +26,11 @@ public class RulesCheck {
         System.out.println("body " + Rules.body(Arrays.asList(
             new Rules.Entry("call", t, "Dana-Work", "5551234567", "in", 60),
             new Rules.Entry("text", t + 1, "Sam \"Q\" - Work", "thread-4", "out", 0))));
+        System.out.println("status " + Rules.statusBody("Texts couldn't be read.\nAndroid  returned \"no\" messages. "));
+        System.out.println("status-empty " + Rules.statusBody(""));
+        StringBuilder longText = new StringBuilder();
+        for (int i = 0; i < 30; i++) longText.append("0123456789");
+        System.out.println("status-long " + Rules.statusBody(longText.toString()));
     }
 
     private static void show(String label, Rules.Who who) {
