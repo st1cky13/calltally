@@ -211,6 +211,12 @@ class PhoneTests(ServerCase):
         texts = [{"type": "inbox", "sender": "Bob", "address": "5554443333", "received": "2026-11-04 09:00:00", "body": "x"}]
         self.assertEqual(phone.build_entries([], calls, texts), [])
 
+    def test_sender_that_is_only_a_number_is_not_a_current_name(self):
+        calls = [{"name": "Dana-Work", "phone_number": "5550001111", "type": "OUTGOING", "date": "2026-11-04 09:00:00", "duration": "01:00"}]
+        for sender in ("+15550001111", "", " "):
+            texts = [{"type": "inbox", "sender": sender, "address": "5550001111", "received": "2026-11-04 09:05:00", "body": "x"}]
+            self.assertEqual(len(phone.build_entries([], calls, texts)), 2, sender)
+
     def test_sent_text_name_you_is_not_a_current_name(self):
         calls = [{"name": "Dana-Work", "phone_number": "5550001111", "type": "OUTGOING", "date": "2026-11-04 09:00:00", "duration": "01:00"}]
         texts = [{"type": "sent", "sender": "You", "address": "5550001111", "received": "2026-11-04 09:05:00", "body": "x"}]

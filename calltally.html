@@ -94,6 +94,7 @@ let oldestDrawn = null;          // day key of the first day drawn
 let earliest = null;             // first day with any data
 let openDay = null;
 let loading = false;
+let refreshAsked = 0, refreshShown = 0;
 const cells = new Map();
 
 function todayKey(){const d = new Date(); return dayKey(d.getFullYear(), d.getMonth(), d.getDate());}
@@ -199,9 +200,12 @@ function showUpdated(last){
 
 async function refresh(){
   if (!oldestDrawn) return;
-  const data = await api(`/api/range?from=${oldestDrawn}&to=${lastDayKey(firstMonth.y, firstMonth.m)}`);
+  const from = oldestDrawn, mine = ++refreshAsked;
+  const data = await api(`/api/range?from=${from}&to=${lastDayKey(firstMonth.y, firstMonth.m)}`);
+  if (mine < refreshShown) return;   // a newer reply already arrived
+  refreshShown = mine;
   earliest = data.earliest;
-  for (const [key, cell] of cells) fillCell(cell, data.days[key] || null);
+  for (const [key, cell] of cells) if (key >= from) fillCell(cell, data.days[key] || null);
   $("empty").hidden = !!earliest;
   showUpdated(data.last_upload);
 }

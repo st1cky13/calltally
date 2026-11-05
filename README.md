@@ -5,7 +5,8 @@ total call time and the number of texts. Click a day to see its entries, and del
 entries stay deleted and can be restored.
 
 A script on an Android phone (in Termux) finds calls and texts with contacts whose name ends in `-Work` and uploads them
-about every 15 minutes, including history already on the phone. It uploads the time, contact, number, direction and call
+about every 15 minutes, including history already on the phone (it reads the newest 2,000 calls and newest 5,000 texts
+across all contacts). It uploads the time, contact, number, direction and call
 length. It never uploads what a text said or anything about other contacts.
 
 ## Server
@@ -32,7 +33,9 @@ The page's "Updated" label turns yellow if the phone hasn't uploaded for three h
   its calls or received texts, but a text you send to one may be missed. Saving it as its own `-Work` contact fixes that.
 - Calls the phone has already dropped from its log. Android keeps a limited number.
 - Two texts with one contact, in the same direction, in the same second count as one.
-- A deleted contact's old calls can still upload, because the call log keeps the old name.
+- Removing `-Work` isn't always enough. A deleted contact's old calls can still upload, and so can old calls from a renamed
+  contact's extra number, because the call log keeps the old name. Delete those entries on the page. Stopping them for
+  good means clearing those calls from the phone's call log.
 
 ## Tests
 

@@ -88,7 +88,10 @@ def work_numbers(contacts, calls, texts):
     sources += [(t.get("address") or t.get("number"), t.get("sender")) for t in texts if t.get("type") == "inbox"]
     for number, name in sources:
         key = number_key(number)
-        if key and isinstance(name, str) and (is_work(name) or not is_work(current.get(key))):
+        # Android can hand back the number itself, or nothing, when it finds no name. That isn't a current name.
+        if not key or not isinstance(name, str) or not name.strip() or number_key(name) == key:
+            continue
+        if is_work(name) or not is_work(current.get(key)):
             current[key] = name.strip()
     names = {key: name for key, name in current.items() if is_work(name)}
     for call in calls:
