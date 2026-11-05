@@ -32,6 +32,7 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ElementTree
+import zlib
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -403,15 +404,79 @@ def row_value(totals):
     return f"{full_time(totals['call_s'])} · {plural(totals['calls'], 'call')} · {plural(totals['texts'], 'text')}"
 
 
-def period_dates(start, today):
-    """The dates of the 14-day pay period from start that holds today, as PayPeriod.dates writes them: "Oct 25 – Nov 7"."""
-    first = start + timedelta(days=(today - start).days // 14 * 14)
+def two_weeks(start, today):
+    """The two weeks from start, as PayPeriod.dates writes them: "Oct 25 – Nov 7", with years when not all this year."""
+    first = start
     last = first + timedelta(days=13)
     show = first.year != today.year or last.year != today.year
 
     def short(day, year):
         return f"{day.strftime('%b')} {day.day}" + (f", {day.year}" if year else "")
     return f"{short(first, show and first.year != last.year)} – {short(last, show)}"
+
+
+def png_rows(data, last_row):
+    """The pixel rows 0..last_row of a PNG screenshot (8-bit RGB or RGBA, not interlaced), as bytes, and the bytes per pixel."""
+    pos, idat, width, step = 8, b"", 0, 4
+    while pos < len(data):
+        length = int.from_bytes(data[pos:pos + 4], "big")
+        kind, body = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + length]
+        if kind == b"IHDR":
+            width = int.from_bytes(body[0:4], "big")
+            step = {6: 4, 2: 3}[body[9]]
+        elif kind == b"IDAT":
+            idat += body
+        pos += 12 + length
+    stride = width * step
+    raw = zlib.decompressobj().decompress(idat, (last_row + 1) * (stride + 1))
+    rows, prev = [], bytearray(stride)
+    for r in range(last_row + 1):
+        kind, line = raw[r * (stride + 1)], bytearray(raw[r * (stride + 1) + 1:(r + 1) * (stride + 1)])
+        if kind == 1:
+            for i in range(step, stride):
+                line[i] = (line[i] + line[i - step]) & 255
+        elif kind == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 255
+        elif kind == 3:
+            for i in range(stride):
+                line[i] = (line[i] + ((line[i - step] if i >= step else 0) + prev[i]) // 2) & 255
+        elif kind == 4:
+            for i in range(stride):
+                a = line[i - step] if i >= step else 0
+                b, c = prev[i], prev[i - step] if i >= step else 0
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append(bytes(line))
+        prev = line
+    return rows, step
+
+
+def shaded_days(nodes, shot):
+    """The calendar days drawn with the shade, read from the screenshot: the unselected days whose colour, a little in from
+    the corner, is not the plain day colour most of them have."""
+    days = [(datetime.strptime(n.get("content-desc"), "%A, %B %d, %Y").date(), n) for n in by_id(nodes, "cal_day")]
+    if not days:
+        return []
+    spots = {}
+    for day, n in days:
+        if n.get("selected") == "true":
+            continue
+        (left, top), (right, bottom) = bounds(n)
+        spots[day] = (left + (right - left) // 5, top + (bottom - top) // 4)
+    rows, step = png_rows(Path(shot).read_bytes(), max(y for x, y in spots.values()))
+    colour = {day: tuple(rows[y][x * step:x * step + 3]) for day, (x, y) in spots.items()}
+    counts = {}
+    for c in colour.values():
+        counts[c] = counts.get(c, 0) + 1
+    plain = max(counts, key=counts.get)
+    return sorted(str(day) for day, c in colour.items() if sum(abs(a - b) for a, b in zip(c, plain)) > 24)
+
+
+def shade_wanted(first, last, month):
+    """The days the calendar should shade between the first and last day when it shows the month of `month`."""
+    days = [first + timedelta(days=i) for i in range(1, (last - first).days)]
+    return sorted(str(d) for d in days if (d.year, d.month) == (month.year, month.month))
 
 
 def screen_problems(nodes, density):
@@ -562,47 +627,49 @@ def main():
         nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_skip")), 20)
         run.shot("04-pay-period-first")
         check("Next asks for the pay period with a calendar and Skip",
-              text_of(nodes, "pay_question") == "Do your pay periods repeat every two weeks? Pick the day the current one started."
+              text_of(nodes, "pay_question") == "Pick the first day of your current pay period, then its last day."
               and len(by_id(nodes, "cal_day")) >= 28 and not by_id(nodes, "confirm"), repr(text_of(nodes, "pay_question")))
-        # The calendar opens on this month. Any day can be picked: picking one shows the review and the current pay period
-        # it gives, picking a day after today moves it, and picking the chosen day again clears both.
+        # The calendar opens on this month. The first tap picks the first day and asks for the last; the second picks the
+        # last day, shades the days between and shows the review; tapping the first day again clears both.
         today = datetime.now(ZoneInfo(zone)).date()
 
         def cal_days(ns):
             return [(datetime.strptime(n.get("content-desc"), "%A, %B %d, %Y").date(), n) for n in by_id(ns, "cal_day")]
-        pick = today.replace(day=1)
+
+        def marked(ns):
+            return [str(day) for day, n in cal_days(ns) if n.get("selected") == "true"]
+        pick, pick_last = today.replace(day=1), today.replace(day=14)
         check("before a day is picked there is no review and no preview",
               not by_id(nodes, "review") and not by_id(nodes, "period_preview"), repr(text_of(nodes, "period_preview")))
         run.tap([n for day, n in cal_days(nodes) if day == pick][0])
-        nodes = run.wait_for(lambda ns: bool(by_id(ns, "review")) and bool(by_id(ns, "period_preview")), 15)
-        run.shot("04b-pay-period-first-picked")
+        nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
+        run.shot("04b-pay-period-first-day")
+        shade = shaded_days(nodes, run.shots / "04b-pay-period-first-day.png")
+        check("picking the 1st highlights it and asks for the last day, with no review, no Confirm and Skip still there",
+              text_of(nodes, "period_preview") == "Now pick the last day." and marked(nodes) == [str(pick)]
+              and not by_id(nodes, "review") and not by_id(nodes, "confirm") and bool(by_id(nodes, "pay_skip")) and not shade,
+              f"{text_of(nodes, 'period_preview')!r} highlighted {marked(nodes)} review {text_of(nodes, 'review')!r} shaded {shade}")
+        run.tap([n for day, n in cal_days(nodes) if day == pick_last][0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "review")) and bool(by_id(ns, "confirm")), 15)
+        run.shot("04c-pay-period-first-last-day")
         want_review = f"Pay periods start: not set → {pick.strftime('%a %b')} {pick.day}"
-        want_preview = f"Current pay period: none → {period_dates(pick, today)}"
-        picked = [n.get("selected") for day, n in cal_days(nodes) if day == pick]
-        check("picking the 1st shows the review and the current pay period it gives",
+        want_preview = f"Pay period: none → {two_weeks(pick, today)}, 14 days"
+        shade = shaded_days(nodes, run.shots / "04c-pay-period-first-last-day.png")
+        check("picking the 14th as the last day shows the review with 14 days, both days highlighted and the days between shaded",
               text_of(nodes, "review") == want_review and text_of(nodes, "period_preview") == want_preview
-              and picked == ["true"] and bool(by_id(nodes, "confirm")),
-              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} want {want_preview!r} selected {picked}")
-        last = (pick.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        if last > today:
-            run.tap([n for day, n in cal_days(nodes) if day == last][0])
-            want_review = f"Pay periods start: not set → {last.strftime('%a %b')} {last.day}"
-            nodes = run.wait_for(lambda ns: text_of(ns, "review") == want_review, 15)
-            want_preview = f"Current pay period: none → {period_dates(last, today)}"
-            picked = [n.get("selected") for day, n in cal_days(nodes) if day == last]
-            check("a day after today can be picked, and the preview moves to the period it gives",
-                  text_of(nodes, "review") == want_review and text_of(nodes, "period_preview") == want_preview and picked == ["true"],
-                  f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} want {want_preview!r} selected {picked}")
-        else:
-            check("a day after today: skipped, today is the last day of the month", True)
-            last = pick
-        run.tap([n for day, n in cal_days(nodes) if day == last][0])
-        nodes = run.wait_for(lambda ns: not by_id(ns, "review") and bool(by_id(ns, "cal_day")), 15)
-        check("picking the chosen day again clears the review and the preview",
+              and marked(nodes) == [str(pick), str(pick_last)] and bool(by_id(nodes, "pay_skip"))
+              and shade == shade_wanted(pick, pick_last, pick),
+              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} want {want_preview!r} "
+              f"highlighted {marked(nodes)} shaded {shade}")
+        run.tap([n for day, n in cal_days(nodes) if day == pick][0])
+        nodes = run.wait_for(lambda ns: not by_id(ns, "review") and not by_id(ns, "period_preview") and bool(by_id(ns, "cal_day")), 15)
+        run.shot("04d-pay-period-first-unpicked")
+        shade = shaded_days(nodes, run.shots / "04d-pay-period-first-unpicked.png")
+        check("picking the first day again clears both days, the review, the preview and the shade",
               not by_id(nodes, "review") and not by_id(nodes, "period_preview") and not by_id(nodes, "confirm")
-              and bool(by_id(nodes, "pay_skip")) and all(n.get("selected") == "false" for day, n in cal_days(nodes)),
+              and bool(by_id(nodes, "pay_skip")) and not marked(nodes) and not shade,
               f"review {text_of(nodes, 'review')!r} preview {text_of(nodes, 'period_preview')!r} "
-              f"selected {[str(d) for d, n in cal_days(nodes) if n.get('selected') == 'true']}")
+              f"highlighted {marked(nodes)} shaded {shade}")
         enabled = [str(day) for day, n in cal_days(nodes) if n.get("enabled") != "true"]
         check("every day of the month can be picked", bool(cal_days(nodes)) and not enabled, f"not enabled {enabled}")
         run.tap(by_id(nodes, "pay_skip")[0])
@@ -620,7 +687,7 @@ def main():
         answer = run.pay("2026-10-25")
         check("pay period set through the test hook for the checks below", answer == "pay period set", answer)
 
-        # Reset from Options: the screen shows the current period for the Oct 25 start; Reset makes the change "none",
+        # Reset from Options: the screen shows the two weeks from the Oct 25 start; Reset makes the change "none",
         # and Confirm removes the pay period, so the month screen has no pay period row. Then it is set again.
         run.sh("am", "force-stop", APP)
         run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
@@ -629,42 +696,79 @@ def main():
         nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_change")), 30)
         run.tap(by_id(nodes, "pay_change")[0])
         today = datetime.now(ZoneInfo(zone)).date()
-        set_preview = f"Current pay period: {period_dates(date(2026, 10, 25), today)}"
+        saved_two = two_weeks(date(2026, 10, 25), today)
+        set_preview = f"Pay period {saved_two}, 14 days"
         nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == set_preview, 20)
         run.shot("07-pay-periods-from-options")
         reset_node = by_id(nodes, "pay_reset")
-        check("Pay periods from Options says the start, shows the current period, and has Close and Reset",
-              text_of(nodes, "pay_question") == "Pay periods start Sun Oct 25 and run two weeks. Pick a day to change it."
+        saved_day, saved_last, before, later = date(2026, 10, 25), date(2026, 11, 7), date(2026, 10, 24), date(2026, 10, 30)
+        shade = shaded_days(nodes, run.shots / "07-pay-periods-from-options.png")
+        check("Pay periods from Options says the start, shows the saved period, and has Close and Reset",
+              text_of(nodes, "pay_question") == "Pay periods start Sun Oct 25 and run two weeks. Pick the first day to change it."
               and text_of(nodes, "period_preview") == set_preview and bool(by_id(nodes, "close")) and not by_id(nodes, "confirm")
               and bool(reset_node) and reset_node[0].get("enabled") == "true" and not by_id(nodes, "review"),
               f"{text_of(nodes, 'pay_question')!r} {text_of(nodes, 'period_preview')!r} want {set_preview!r}")
-        # One day is highlighted at a time: the saved start, then the day picked instead. Tapping the highlighted day
-        # turns the pay period off, as Reset does; tapping the saved start again is no change.
+        # The saved first and last day are highlighted and the days between shaded, across the two months. A day before
+        # the first day starts a new pick; a later day is its last day; the last day again clears it; the first day again
+        # turns the pay period off, as Reset does; picking the saved two days again is no change.
         def cal_days(ns):
             return [(datetime.strptime(n.get("content-desc"), "%A, %B %d, %Y").date(), n) for n in by_id(ns, "cal_day")]
 
         def marked(ns):
             return [str(day) for day, n in cal_days(ns) if n.get("selected") == "true"]
-        saved_day, before = date(2026, 10, 25), date(2026, 10, 24)
-        check("the saved start is the one highlighted day", marked(nodes) == [str(saved_day)], str(marked(nodes)))
+
+        def page(ns, button, day):
+            run.tap(by_id(ns, button)[0])
+            return run.wait_for(lambda n2: any(d == day for d, n in cal_days(n2)), 15)
+        october = marked(nodes)
+        nodes = page(nodes, "cal_next", saved_last)
+        run.shot("07a-pay-periods-from-options-next-month")
+        november, shade_next = marked(nodes), shaded_days(nodes, run.shots / "07a-pay-periods-from-options-next-month.png")
+        nodes = page(nodes, "cal_prev", saved_day)
+        check("the saved first day and last day are highlighted and the days between shaded, into the next month",
+              october == [str(saved_day)] and november == [str(saved_last)]
+              and shade == shade_wanted(saved_day, saved_last, saved_day) and shade_next == shade_wanted(saved_day, saved_last, saved_last),
+              f"highlighted {october} then {november} shaded {shade} then {shade_next}")
         run.tap([n for day, n in cal_days(nodes) if day == before][0])
-        nodes = run.wait_for(lambda ns: text_of(ns, "review") == "Pay periods start: Sun Oct 25 → Sat Oct 24", 15)
+        nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
         run.shot("07b-pay-periods-day-before")
-        check("tapping a day before the start picks it, and it alone is highlighted",
-              text_of(nodes, "review") == "Pay periods start: Sun Oct 25 → Sat Oct 24"
-              and text_of(nodes, "period_preview") == f"{set_preview} → {period_dates(before, today)}" and marked(nodes) == [str(before)],
-              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} highlighted {marked(nodes)}")
+        step1 = (marked(nodes), shaded_days(nodes, run.shots / "07b-pay-periods-day-before.png"), bool(by_id(nodes, "review")),
+                 bool(by_id(nodes, "confirm")), bool(by_id(nodes, "revert")))
+        run.tap([n for day, n in cal_days(nodes) if day == later][0])
+        nodes = run.wait_for(lambda ns: text_of(ns, "review") == "Pay periods start: Sun Oct 25 → Sat Oct 24", 15)
+        run.tap([n for day, n in cal_days(nodes) if day == later][0])
+        nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
+        step3 = (marked(nodes), bool(by_id(nodes, "review")))
+        run.tap([n for day, n in cal_days(nodes) if day == later][0])
+        nodes = run.wait_for(lambda ns: text_of(ns, "review") == "Pay periods start: Sun Oct 25 → Sat Oct 24", 15)
+        run.shot("07c-pay-periods-new-period")
+        shade = shaded_days(nodes, run.shots / "07c-pay-periods-new-period.png")
+        want_preview = f"Pay period: {saved_two} → Oct 24 – Oct 30, 7 days"
+        check("a day before the first day starts a new pick, a later day is its last day, and the last day again clears it",
+              step1 == ([str(before)], [], False, False, True) and step3 == ([str(before)], False)
+              and text_of(nodes, "period_preview") == want_preview and marked(nodes) == [str(before), str(later)]
+              and shade == shade_wanted(before, later, before) and bool(by_id(nodes, "confirm")),
+              f"{step1} {step3} {text_of(nodes, 'period_preview')!r} want {want_preview!r} highlighted {marked(nodes)} shaded {shade}")
         run.tap([n for day, n in cal_days(nodes) if day == before][0])
         nodes = run.wait_for(lambda ns: (text_of(ns, "review") or "").endswith("→ none"), 15)
-        check("tapping the highlighted day again turns the pay period off, as Reset does, with nothing highlighted",
+        run.shot("07d-pay-periods-off")
+        shade = shaded_days(nodes, run.shots / "07d-pay-periods-off.png")
+        check("tapping the first day again turns the pay period off, as Reset does, with nothing highlighted or shaded",
               text_of(nodes, "review") == "Pay periods start: Sun Oct 25 → none"
-              and text_of(nodes, "period_preview") == f"{set_preview} → none" and not marked(nodes) and bool(by_id(nodes, "confirm")),
-              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} highlighted {marked(nodes)}")
+              and text_of(nodes, "period_preview") == f"Pay period: {saved_two} → none" and not marked(nodes)
+              and bool(by_id(nodes, "confirm")) and not shade,
+              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} highlighted {marked(nodes)} shaded {shade}")
         run.tap([n for day, n in cal_days(nodes) if day == saved_day][0])
+        nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
+        nodes = page(nodes, "cal_next", saved_last)
+        run.tap([n for day, n in cal_days(nodes) if day == saved_last][0])
         nodes = run.wait_for(lambda ns: not by_id(ns, "review") and bool(by_id(ns, "close")), 15)
-        check("tapping the saved start then is no change: Close, no review, the start highlighted",
+        november = marked(nodes)
+        nodes = page(nodes, "cal_prev", saved_day)
+        check("picking the saved first and last day again is no change: Close, no review, both highlighted",
               not by_id(nodes, "review") and not by_id(nodes, "confirm") and text_of(nodes, "period_preview") == set_preview
-              and marked(nodes) == [str(saved_day)], f"{text_of(nodes, 'review')!r} highlighted {marked(nodes)}")
+              and marked(nodes) == [str(saved_day)] and november == [str(saved_last)],
+              f"{text_of(nodes, 'review')!r} highlighted {marked(nodes)} then {november}")
         reset_node = by_id(nodes, "pay_reset")
         run.tap(reset_node[0])
         nodes = run.wait_for(lambda ns: (text_of(ns, "review") or "").endswith("→ none"), 15)
@@ -672,12 +776,13 @@ def main():
         small, outside = screen_problems(nodes, density)
         reset_node = by_id(nodes, "pay_reset")
         footer = [n.get("text") for n in nodes if n.get("resource-id") in (f"{APP}:id/revert", f"{APP}:id/pay_reset", f"{APP}:id/confirm")]
+        shade = shaded_days(nodes, run.shots / "08-pay-periods-reset.png")
         check("Reset makes the change none: the review and the preview end in none, with Revert, Reset and Confirm",
               text_of(nodes, "review") == "Pay periods start: Sun Oct 25 → none"
-              and text_of(nodes, "period_preview") == f"{set_preview} → none" and footer == ["Revert", "Reset", "Confirm"]
+              and text_of(nodes, "period_preview") == f"Pay period: {saved_two} → none" and footer == ["Revert", "Reset", "Confirm"]
               and bool(reset_node) and reset_node[0].get("enabled") == "false" and not by_id(nodes, "close")
-              and not marked(nodes),
-              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} footer {footer}")
+              and not marked(nodes) and not shade,
+              f"{text_of(nodes, 'review')!r} {text_of(nodes, 'period_preview')!r} footer {footer} shaded {shade}")
         check("every button on the pay period screen is at least 40dp tall and nothing reaches past the screen",
               not small and not outside, f"small {small[:3]} outside {outside[:3]}")
         run.tap(by_id(nodes, "confirm")[0])

@@ -60,6 +60,11 @@ final class PayPeriod {
         return dates(index(today), today);
     }
 
+    /** The first period from the start and its length: "Oct 25 – Nov 7, 14 days", with years as the label has them. */
+    String span(LocalDate today) {
+        return dates(0, today) + ", " + Words.plural(days, "day");
+    }
+
     /** "Pay periods start Sun Oct 25 and run two weeks" */
     String describe(LocalDate today) {
         String length = days == 14 ? "two weeks" : days == 7 ? "one week" : Words.plural(days, "day");

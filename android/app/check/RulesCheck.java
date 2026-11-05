@@ -120,6 +120,8 @@ public class RulesCheck {
         System.out.println("pay-before " + p.index(java.time.LocalDate.of(2026, 10, 24)) + " " + p.first(-1) + " " + p.last(-1));
         System.out.println("pay-current " + p.current(today) + " | " + PayPeriod.of("2026-11-08", "14").current(today) + " | "
             + PayPeriod.of("2026-10-24", "14").current(today) + " | " + PayPeriod.of("2026-12-27", "14").current(java.time.LocalDate.of(2027, 1, 2)));
+        System.out.println("pay-span " + p.span(today) + " | " + PayPeriod.of("2026-12-28", "14").span(today) + " | "
+            + PayPeriod.of("2026-11-28", "1").span(today) + " | " + PayPeriod.of("2026-10-25", "10").describe(today));
         System.out.println("pay-describe " + p.describe(today) + " | " + PayPeriod.of("2027-01-03", "7").describe(today));
         System.out.println("pay-bad " + PayPeriod.of(null, "14") + " " + PayPeriod.of("2026-13-01", "14") + " " + PayPeriod.of("2026-10-25", "0")
             + " " + PayPeriod.of("2026-10-25", "x"));
