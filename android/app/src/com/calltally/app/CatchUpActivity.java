@@ -159,10 +159,10 @@ public class CatchUpActivity extends Screen {
         result.setText("");
         settings.setVisibility(View.GONE);
         if (Roles.holdsSmsRole(this)) {
-            // Make sure the hand-back still targets Google Messages when we never recorded a previous app.
-            if (!Sync.preferences(this).contains("prev_sms")) {
-                Sync.preferences(this).edit().putString("prev_sms", Roles.GOOGLE_MESSAGES).commit();
-            }
+            // Call Tally already holds the role (the owner set it in Settings), so the real previous app can't be known
+            // now. Any stored prev_sms could be stale and send them to the wrong app, so clear it and let the hand-back
+            // use the Google Messages / default-apps settings route. The worst case is today's behaviour, never a wrong app.
+            Sync.preferences(this).edit().putString("prev_sms", null).commit();
             readThenHandBack();
             return;
         }

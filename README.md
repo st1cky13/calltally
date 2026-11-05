@@ -39,10 +39,11 @@ stays hidden until you set one in Options. The page can be shown again from Opti
 Some one-to-one chats with end-to-end encryption on are kept so that only the phone's own messaging app can read them,
 so they don't show up in Call Tally. The "Catch up encrypted" button in Options reads them: it asks Android to make Call
 Tally the phone's messaging app for a moment, which you approve in an Android dialog, reads once, then asks you to switch
-back to Google Messages, which you approve in another dialog. Call Tally never sends a message, and while it holds that
+back to your previous messaging app, which you approve in another dialog; when that app isn't known it falls back to
+Google Messages. Call Tally never sends a message, and while it holds that
 role it says so plainly, in Options and on the month screen, with a button to switch back. If a text arrives during that
 brief moment it is delivered only to the messaging app, so Call Tally writes it straight into the phone's inbox, unread,
-so Google Messages shows it after the switch back. That pass-through is the only time the app touches a message's words,
+so your messaging app shows it after the switch back. That pass-through is the only time the app touches a message's words,
 and it never reads them to count.
 
 ## Limits

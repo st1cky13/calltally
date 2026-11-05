@@ -10,8 +10,16 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
-    <!-- The app names Google Messages' version where it needs it, which Android hides from apps that don't say they look for it. -->
-    <queries><package android:name="com.google.android.apps.messaging" /></queries>
+    <!-- Catch up encrypted needs to see and open the owner's own messaging app to switch back to it. The intent query
+         matches any SMS-capable app (it answers smsto: SENDTO), so getLaunchIntentForPackage can find apps like Samsung
+         Messages, not only Google Messages. The package entry stays for Google Messages' version lookup. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <package android:name="com.google.android.apps.messaging" />
+    </queries>
     <application android:label="Call Tally" android:icon="@drawable/icon" android:allowBackup="false"
         android:debuggable="__DEBUGGABLE__"
         android:theme="@style/Teal">
