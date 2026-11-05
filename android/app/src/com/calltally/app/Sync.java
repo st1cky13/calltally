@@ -21,7 +21,7 @@ final class Sync {
     static final int JOB_CHANGES = 2;
     private static final long PERIOD_MS = 15 * 60 * 1000L;
     static final String NOT_ALLOWED = "Needs permission. Open this app to allow it.";
-    static final String NOBODY = "Nobody is ticked yet. Tap the gear, then Who counts, to choose the people who count.";
+    static final String NOBODY = "Nobody is ticked yet. Tap the gear, then Contacts, to choose the people who count.";
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     /** A run was asked for while one was going: the one going does another straight after, so nothing waits for the schedule. */
     private static final AtomicBoolean AGAIN = new AtomicBoolean(false);

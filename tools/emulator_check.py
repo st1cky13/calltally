@@ -8,8 +8,7 @@ period row. It sets the pay period through the test hook and turns it off again 
 sets it again, ticks Dana-Work and Sam - Work through it, runs the app and copies its record
 off the emulator to check it with sqlite3 against what tests/reference.py would have kept. Then it unticks Dana, ticks her again
 and deletes her contact, checking that nothing is ever lost, ticks Mom to check that conversations keep their identity,
-and takes the app's permissions away. After the first run it also opens Options > Phone check and reads its rows: the
-top line, the seeded chats and the newest messages with how each counts. Last it opens the month screen and reads it with uiautomator: the title, the three
+and takes the app's permissions away. Last it opens the month screen and reads it with uiautomator: the title, the three
 totals rows and the grid, counted as tests/reference.py counts the record, with every button at least 40dp tall; then Who
 counts with its ticks and search; then a damaged record, which must be moved aside, with an OK that clears the note.
 Last, an update over what the uploading app (0.6.0) leaves: a fresh install given its sent.txt and its last run's words by
@@ -895,69 +894,9 @@ def main():
         check("the run's status is clean", f"{len(want)} calls and texts with 2 ticked people found, " in status
               and " new in the record." in status and "couldn't" not in status and "wrong" not in status, status)
 
-        # Phone check, with Dana and Sam ticked: Options > Phone check lists the chats and the newest rows of both message
-        # tables as the phone hands them over, with how the app would count each, and has Share and Close.
-        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
-        nodes = run.wait_for(lambda ns: bool(by_id(ns, "gear")), 30)
-        run.tap(by_id(nodes, "gear")[0])
-        nodes = run.wait_for(lambda ns: bool(by_id(ns, "who_open")), 30)
-        for _ in range(8):
-            if by_id(nodes, "phone_check"):
-                break
-            run.swipe_up()
-            nodes = run.nodes()
-        run.tap(by_id(nodes, "phone_check")[0])
-        nodes = run.wait_for(lambda ns: any((n.get("text") or "").startswith("Android ") for n in by_id(ns, "phone_row")), 40)
-        run.shot("07-phone-check")
-        phone_nodes = nodes
-        seen, small, outside = [], [], []
-        for turn in range(20):
-            fresh = [n.get("text") or "" for n in by_id(nodes, "phone_row") if (n.get("text") or "") not in seen]
-            seen += fresh
-            tiny, past = screen_problems(nodes, density)
-            small, outside = small + tiny, outside + past
-            if turn > 0 and not fresh:
-                break
-            run.swipe_up()
-            nodes = run.nodes()
-        run.shot("08-phone-check-end")
-        plumbing_thread = run.thread_for(PLUMBING)
-        check("Phone check's top line names Android and the default messaging app",
-              any(t.startswith("Android ") and ", default messaging app " in t for t in seen), str(seen[:1]))
-        check("Phone check lists the seeded group chat with Dana-Work and the plumbing chat",
-              ("group" not in groups or any(t.startswith(f"chat {groups['group']} · ") and "Dana-Work" in t for t in seen))
-              and any(t.startswith(f"chat {plumbing_thread} · ") and PLUMBING in t for t in seen),
-              str([t for t in seen if t.startswith("chat ")][:6]))
-        check("Phone check shows Dana's text counting under Dana-Work and the plumbing text skipped",
-              any(" · received · text row · " in t and f"address {DANA1} " in t and "counts under Dana-Work" in t for t in seen)
-              and any(" · text row · " in t and f"address {PLUMBING} " in t and "skipped: " in t for t in seen),
-              str([t for t in seen if "text row" in t][:4]))
-        check("Phone check has Share and Close, says it reads numbers only, and nothing reaches past the screen",
-              bool(by_id(phone_nodes, "phone_share")) and bool(by_id(phone_nodes, "close"))
-              and any("never reads what a message says" in (n.get("text") or "") for n in phone_nodes) and not small and not outside,
-              f"small {small[:3]} outside {outside[:3]}")
-        # The chat line names the filing as the record remembers it: the first start's run filed the chat as a group while
-        # only Dana was ticked. Its rows count under the group's current label.
-        rcs_line = [t for t in seen if t.startswith(f"chat {groups['rcs']} · ")]
-        check("Phone check marks the RCS chat as left out of the conversation list, says why, and shows it filed as a group",
-              len(rcs_line) == 1 and f"ids " in rcs_line[0] and f"{RCS_ID} [address is not a phone number]" in rcs_line[0]
-              and "left out of the conversation list by the app" in rcs_line[0] and "its messages name " in rcs_line[0]
-              and rcs_line[0].endswith("filed as Group: Dana-Work +2"), str(rcs_line))
-        rcs_rows = [t for t in seen if " · picture or group row" in t and f" · chat {groups['rcs']} · " in t]
-        check("Phone check shows the RCS chat's rows counting under the group",
-              len(rcs_rows) == 3 and all(f"counts under {RCS_LABEL}" in t for t in rcs_rows), str(rcs_rows))
         own_saved = dict(sqlite3.connect(f"file:{first / DATABASE}?mode=ro", uri=True).execute("SELECT key,value FROM settings").fetchall())
-        own_key = reference.number_key(OWN)
-        check("the record keeps the phone's own number, learned from the sent message, and Phone check shows it",
-              own_saved.get("own_numbers") == own_key and f"Your numbers: {own_key}" in seen,
-              f"{own_saved.get('own_numbers')!r} {[t for t in seen if t.startswith('Your numbers')]}")
-        crashes = run.adb("logcat", "-d", "-b", "crash", check=False)
-        check("Phone check opened without a crash", APP not in crashes, crashes.strip()[-400:])
-        (out / "phone-check.txt").write_text("\n".join(seen) + "\n")
-        run.sh("input", "keyevent", "KEYCODE_BACK")
-        time.sleep(1)
-        run.sh("input", "keyevent", "KEYCODE_BACK")
-        time.sleep(1)
+        check("the record keeps the phone's own number, learned from the sent message",
+              own_saved.get("own_numbers") == reference.number_key(OWN), repr(own_saved.get("own_numbers")))
 
         # Catch up encrypted: Call Tally briefly becomes the phone's messaging app, reads once, then hands the role back,
         # with the owner approving each change in a system dialog. Dana-Work and Sam - Work are ticked and the record matches
@@ -1340,7 +1279,7 @@ def main():
 
         # 0.9.12: time per text, a rule set in Options. At 15 seconds the month row gets a third line, the seeded month's
         # texts times 15 seconds, with its call time unchanged; it goes back to 0 after the day view and by-contact shots.
-        def set_text_time(seconds, want_line):
+        def set_text_time(seconds, want_line, shoot=False):
             ns = run.wait_for(lambda n: bool(by_id(n, "gear")), 15)
             run.tap(by_id(ns, "gear")[0])
             ready = lambda n: [b.get("enabled") for b in by_id(n, "text_time_change")] == ["true"]
@@ -1365,10 +1304,22 @@ def main():
                 run.tap(by_id(ns, "confirm")[0])
             ns = run.wait_for(lambda n: text_of(n, "text_time_line") == want_line and not by_id(n, "text_time_value"), 15)
             shown = text_of(ns, "text_time_line")
+            if shoot:
+                # 0.9.13: the whole Options screen, scrolled to the top, and its bottom when it is taller than the screen.
+                size = run.adb("shell", "wm", "size").strip().splitlines()[-1].split(":")[-1].strip()
+                width, height = (int(v) for v in size.split("x"))
+                for _ in range(2):
+                    run.sh("input", "swipe", width // 2, height // 4, width // 2, height * 3 // 4, 400)
+                time.sleep(1)
+                run.shot("14-options")
+                if not by_id(run.nodes(), "version_line"):
+                    for _ in range(4):
+                        run.swipe_up()
+                    run.shot("14b-options-bottom")
             run.sh("input", "keyevent", "KEYCODE_BACK")
             return said, shown, small, outside
 
-        said, shown, small, outside = set_text_time(15, "Time per text: 15 seconds")
+        said, shown, small, outside = set_text_time(15, "Time per text: 15 seconds", shoot=True)
         check("Time per text set to 15 in Options: the window reads off → 15 seconds and Options shows the new rule",
               said == "Time per text: off → 15 seconds" and shown == "Time per text: 15 seconds" and not small and not outside,
               f"{said!r} {shown!r} small {small[:3]} outside {outside[:3]}")

@@ -491,6 +491,14 @@ abstract class Screen extends Activity {
         button.setBackground(touchable(shape(card2, accent, 2, 8)));
     }
 
+    /** The same on a clear background with corners of this radius, 20 for a pill; the touch has a mask of its own. */
+    void outlined(Button button, float radiusDp) {
+        button.setTag(R.id.quiet, null);
+        button.setTextColor(txt);
+        button.setTypeface(medium());
+        button.setBackground(touchable(shape(0, accent, 2, radiusDp), radiusDp));
+    }
+
     /**
      * The soft accent fill of a busy day's tile and the totals, without a line: light enough for the text on it and still
      * plain to see on the dark page.

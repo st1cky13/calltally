@@ -31,7 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Who counts: every contact on the phone with a check box, and everyone ticked before who is no longer on the phone.
+ * Contacts: every contact on the phone with a check box, and everyone ticked before who is no longer on the phone.
  * Only ticked people count. Ticking adds the person and their numbers to the record's people table; unticking only
  * clears the tick, so their entries stay.
  */
@@ -150,7 +150,7 @@ public class WhoActivity extends Screen {
             });
             footer = footer(next);
         }
-        frame("Who counts", page, !first);
+        frame("Contacts", page, !first);
         load();
     }
 

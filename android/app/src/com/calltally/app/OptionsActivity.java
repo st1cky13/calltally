@@ -10,6 +10,7 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.DynamicDrawableSpan;
 import android.text.style.ImageSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,7 +23,7 @@ import android.widget.TextView;
 import java.time.LocalDate;
 import java.util.Locale;
 
-/** Options: Who counts, the pay period, hiding ignored entries, the look, the last run, the phone check and the first-start page. Saved in the record. */
+/** Options: Contacts, the pay period, the time per text, hiding ignored entries, the last run, the look and the first-start page. Saved in the record. */
 public class OptionsActivity extends Screen {
     private static final int[] THEME_COLORS = {R.color.teal_accent, R.color.blue_accent, R.color.plum_accent, R.color.amber_accent, R.color.slate_accent};
     private static final int[] THEME_IDS = {R.id.theme_teal, R.id.theme_blue, R.id.theme_plum, R.id.theme_amber, R.id.theme_slate};
@@ -41,6 +42,10 @@ public class OptionsActivity extends Screen {
     private Button switchBack;
     private final Button[] modes = new Button[3];
     private final Button[] themes = new Button[5];
+    /** Muted() lines; those later set to 13sp are notes and go back to muted. */
+    private final java.util.List<TextView> lines = new java.util.ArrayList<>();
+    /** The top heading has no line above it. */
+    private boolean firstHeading = true;
     private static final int SWITCH_BACK = 21;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener runs = new SharedPreferences.OnSharedPreferenceChangeListener() {
@@ -58,9 +63,9 @@ public class OptionsActivity extends Screen {
         super.onCreate(saved);
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(16), dp(4), dp(16), dp(16));
+        column.setPadding(edge(), dp(4), edge(), dp(16));
 
-        heading("Who counts");
+        heading("Contacts");
         whoLine = muted("");
         Button whoOpen = button("Change");
         whoOpen.setId(R.id.who_open);
@@ -85,17 +90,6 @@ public class OptionsActivity extends Screen {
             }
         });
         pair(payLine, payChange);
-
-        heading("Day details");
-        hide = new CheckBox(this);
-        hide.setId(R.id.hide_ignored);
-        hide.setText("Hide ignored entries");
-        hide.setTextSize(14);
-        hide.setTextColor(txt);
-        hide.setMinHeight(dp(44));
-        hide.setMinimumHeight(dp(44));
-        hide.setButtonTintList(new ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {accent, muted}));
-        column.addView(hide, wide());
 
         // Time per text: the owner's seconds for each text, shown beside the text counts and kept apart from call time.
         // Change opens a small window with the old and new rule; nothing is saved until Confirm.
@@ -163,7 +157,7 @@ public class OptionsActivity extends Screen {
                 TextView title = text("Time per text", 16, txt, false);
                 title.setTypeface(medium());
                 box.addView(title, wide());
-                TextView explain = muted("Seconds counted for each text, shown apart from call time. 0 turns it off.");
+                TextView explain = text("Seconds counted for each text, shown apart from call time. 0 turns it off.", 14, muted, false);
                 LinearLayout.LayoutParams explainGap = wide();
                 explainGap.topMargin = dp(6);
                 box.addView(explain, explainGap);
@@ -185,7 +179,7 @@ public class OptionsActivity extends Screen {
                 LinearLayout.LayoutParams valueGap = wide();
                 valueGap.topMargin = dp(12);
                 box.addView(value, valueGap);
-                review = muted("");
+                review = text("", 14, muted, false);
                 review.setId(R.id.text_time_review);
                 figures(review);
                 review.setVisibility(View.GONE);
@@ -346,46 +340,16 @@ public class OptionsActivity extends Screen {
         });
         textTime.load();
 
-        heading("Look");
-        column.addView(sub("Mode"), wide());
-        LinearLayout modeRow = row();
-        for (int i = 0; i < 3; i++) {
-            final String mode = MODES[i];
-            modes[i] = button(MODE_NAMES[i]);
-            modes[i].setId(MODE_IDS[i]);
-            modes[i].setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    look(mode, theme());
-                }
-            });
-            modeRow.addView(modes[i], third(i));
-        }
-        column.addView(modeRow, wide());
-        column.addView(sub("Theme"), wide());
-        LinearLayout themeRow = null;
-        for (int i = 0; i < 5; i++) {
-            if (i % 3 == 0) {
-                themeRow = row();
-                LinearLayout.LayoutParams gap = wide();
-                if (i > 0) gap.topMargin = dp(6);
-                column.addView(themeRow, gap);
-            }
-            final String name = THEMES[i];
-            themes[i] = button("");
-            themes[i].setId(THEME_IDS[i]);
-            themes[i].setText(swatch(THEME_NAMES[i], getColor(THEME_COLORS[i])));
-            themes[i].setContentDescription(THEME_NAMES[i]);
-            themes[i].setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    look(mode(), name);
-                }
-            });
-            themeRow.addView(themes[i], third(i % 3));
-        }
-        // Keeps the second row's buttons the same width as the first's.
-        themeRow.addView(new View(this), third(2));
+        heading("Day details");
+        hide = new CheckBox(this);
+        hide.setId(R.id.hide_ignored);
+        hide.setText("Hide ignored entries");
+        hide.setTextSize(15);
+        hide.setTextColor(txt);
+        hide.setMinHeight(dp(44));
+        hide.setMinimumHeight(dp(44));
+        hide.setButtonTintList(new ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {accent, muted}));
+        column.addView(hide, wide());
 
         heading("Last run");
         runLine = muted("");
@@ -394,6 +358,7 @@ public class OptionsActivity extends Screen {
         column.addView(runLine, wide());
         runNow = button("Run now");
         runNow.setId(R.id.run_now);
+        quiet(runNow);
         runNow.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -402,21 +367,7 @@ public class OptionsActivity extends Screen {
                 thread(getApplicationContext());
             }
         });
-        LinearLayout.LayoutParams runGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        runGap.topMargin = dp(8);
-        column.addView(runNow, runGap);
-
-        heading("Phone check");
-        TextView phoneLine = muted("See what the phone hands the app.");
-        Button phoneOpen = button("Open");
-        phoneOpen.setId(R.id.phone_check);
-        phoneOpen.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(OptionsActivity.this, PhoneCheckActivity.class));
-            }
-        });
-        pair(phoneLine, phoneOpen);
+        column.addView(runNow, flushStart(runNow));
 
         heading("Catch up encrypted");
         TextView catchInfo = muted("Read encrypted chats the phone only shows its messaging app.");
@@ -465,9 +416,61 @@ public class OptionsActivity extends Screen {
         switchGap.topMargin = dp(8);
         column.addView(switchBack, switchGap);
 
+        heading("Look");
+        column.addView(sub("Mode"), wide());
+        // One track in the second card's grey, like the day view's Calls and Texts; the chosen third sits in it as a card.
+        LinearLayout modeRow = row();
+        modeRow.setBackground(shape(card2, 0, 0, 10));
+        modeRow.setPadding(dp(2), dp(2), dp(2), dp(2));
+        for (int i = 0; i < 3; i++) {
+            final String mode = MODES[i];
+            modes[i] = button(MODE_NAMES[i]);
+            modes[i].setId(MODE_IDS[i]);
+            modes[i].setMinHeight(0);
+            modes[i].setMinimumHeight(0);
+            modes[i].setPadding(dp(8), 0, dp(8), 0);
+            modes[i].setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    look(mode, theme());
+                }
+            });
+            modeRow.addView(modes[i], new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        }
+        column.addView(modeRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+        column.addView(sub("Theme"), wide());
+        LinearLayout themeRow = null;
+        for (int i = 0; i < 5; i++) {
+            if (i % 3 == 0) {
+                themeRow = row();
+                LinearLayout.LayoutParams gap = wide();
+                if (i > 0) gap.topMargin = dp(6);
+                column.addView(themeRow, gap);
+            }
+            final String name = THEMES[i];
+            themes[i] = button("");
+            themes[i].setId(THEME_IDS[i]);
+            themes[i].setText(swatch(THEME_NAMES[i], getColor(THEME_COLORS[i])));
+            themes[i].setContentDescription(THEME_NAMES[i]);
+            // A pill: the dot and the name, 40dp tall.
+            themes[i].setMinHeight(dp(40));
+            themes[i].setMinimumHeight(dp(40));
+            themes[i].setPadding(dp(12), 0, dp(12), 0);
+            themes[i].setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    look(mode(), name);
+                }
+            });
+            themeRow.addView(themes[i], third(i % 3));
+        }
+        // Keeps the second row's buttons the same width as the first's.
+        themeRow.addView(new View(this), third(2));
+
         heading("First start");
         Button again = button("Show the first-start page again");
         again.setId(R.id.start_again);
+        quiet(again);
         again.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -478,7 +481,7 @@ public class OptionsActivity extends Screen {
                 finish();
             }
         });
-        column.addView(again, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        column.addView(again, flushStart(again));
 
         // The app's own version, so the owner can confirm which build is installed.
         TextView version = muted(versionLine());
@@ -488,6 +491,12 @@ public class OptionsActivity extends Screen {
         LinearLayout.LayoutParams versionGap = wide();
         versionGap.topMargin = dp(24);
         column.addView(version, versionGap);
+        // A line set to 13sp is a note, not a value: muted, as before.
+        for (TextView line : lines) {
+            if (line.getTextSize() == TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13, getResources().getDisplayMetrics()) && line.getCurrentTextColor() == txt) {
+                line.setTextColor(muted);
+            }
+        }
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(column);
@@ -605,15 +614,24 @@ public class OptionsActivity extends Screen {
     }
 
     private void drawLook() {
+        // The chosen mode: a card with an accent line in the track. The others: clear, a ripple when touched.
         for (int i = 0; i < 3; i++) {
-            if (MODES[i].equals(mode())) filled(modes[i]);
-            else plain(modes[i]);
-            modes[i].setSelected(MODES[i].equals(mode()));
+            boolean chosen = MODES[i].equals(mode());
+            modes[i].setTextColor(chosen ? txt : muted);
+            modes[i].setTypeface(medium());
+            modes[i].setBackground(chosen ? touchable(shape(card, accent, 1, 8)) : touchable(null, 8));
+            modes[i].setSelected(chosen);
         }
+        // The chosen theme: a pill outlined in the accent. The others: clear, a ripple when touched.
         for (int i = 0; i < 5; i++) {
-            if (THEMES[i].equals(theme())) outlined(themes[i]);
-            else plain(themes[i]);
-            themes[i].setSelected(THEMES[i].equals(theme()));
+            boolean chosen = THEMES[i].equals(theme());
+            if (chosen) {
+                outlined(themes[i], 20);
+            } else {
+                plain(themes[i]);
+                themes[i].setBackground(touchable(null, 20));
+            }
+            themes[i].setSelected(chosen);
         }
     }
 
@@ -628,16 +646,34 @@ public class OptionsActivity extends Screen {
         return text;
     }
 
+    /** A section's caption, with a thin line above it except at the top. */
     private void heading(String value) {
-        TextView view = text(value, 14, txt, true);
+        TextView view = caption(value);
         LinearLayout.LayoutParams params = wide();
-        params.topMargin = dp(18);
-        params.bottomMargin = dp(6);
+        params.topMargin = dp(firstHeading ? 4 : 24);
+        params.bottomMargin = dp(8);
+        if (!firstHeading) {
+            View rule = divider();
+            LinearLayout.LayoutParams ruleGap = (LinearLayout.LayoutParams) rule.getLayoutParams();
+            ruleGap.topMargin = dp(12);
+            column.addView(rule, ruleGap);
+        }
+        firstHeading = false;
         column.addView(view, params);
     }
 
+    /** A value line in the page's body text. */
     private TextView muted(String value) {
-        return text(value, 14, muted, false);
+        TextView view = text(value, 15, txt, false);
+        lines.add(view);
+        return view;
+    }
+
+    /** A quiet button on its own line, its word lined up with the text above: the button's own padding hangs past it. */
+    private LinearLayout.LayoutParams flushStart(Button button) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMarginStart(-button.getPaddingStart());
+        return params;
     }
 
     /** "Call Tally 0.9.1" from the installed package; just "Call Tally" when the version can't be read. */
@@ -651,18 +687,23 @@ public class OptionsActivity extends Screen {
     }
 
     private TextView sub(String value) {
-        TextView view = text(value, 13, muted, false);
-        view.setPadding(0, dp(6), 0, dp(6));
+        TextView view = text(value, 15, txt, false);
+        view.setPadding(0, dp(4), 0, dp(8));
         return view;
     }
 
-    /** Words on the left, a button on the right. */
+    /** Words on the left, a quiet button on the right, its word lined up with the right edge. */
     private void pair(TextView words, Button button) {
+        quiet(button);
+        // Quiet dims further when off, so the dimming is set again in its new look.
+        enable(button, button.isEnabled());
         LinearLayout row = row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(words, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout.LayoutParams side = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         side.leftMargin = dp(10);
+        // The button's own padding hangs past the edge.
+        side.setMarginEnd(-button.getPaddingEnd());
         row.addView(button, side);
         column.addView(row, wide());
     }
