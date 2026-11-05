@@ -1004,6 +1004,15 @@ def main():
               sms_default() == "com.android.messaging" and rows(run.record()) == got,
               f"default {sms_default()} new {[r for r in rows(run.record()) if r not in got][:2]}")
 
+        # The app's own version at the very bottom of Options, so the owner can confirm which build is installed.
+        manifest = (ROOT / "android/app/AndroidManifest.template.xml").read_text()
+        app_version = manifest.split('android:versionName="')[1].split('"')[0]
+        nodes = open_options("version_line")
+        version_text = text_of(nodes, "version_line")
+        check("Options shows the app version at the bottom",
+              (version_text or "").startswith("Call Tally ") and app_version in (version_text or ""),
+              f"{version_text!r} want version {app_version!r}")
+
         # Run 2: Dana unticked, and a new call from her. Nothing goes and nothing of hers comes in.
         answer = run.tick([DANA1], untick=True)
         check("Dana unticked through the test hook", answer == "unticked 1", answer)

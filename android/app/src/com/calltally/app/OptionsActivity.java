@@ -234,6 +234,15 @@ public class OptionsActivity extends Screen {
         });
         column.addView(again, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // The app's own version, so the owner can confirm which build is installed.
+        TextView version = muted(versionLine());
+        version.setId(R.id.version_line);
+        version.setTextSize(13);
+        version.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams versionGap = wide();
+        versionGap.topMargin = dp(24);
+        column.addView(version, versionGap);
+
         ScrollView scroll = new ScrollView(this);
         scroll.addView(column);
         frame("Options", scroll, true);
@@ -383,6 +392,16 @@ public class OptionsActivity extends Screen {
 
     private TextView muted(String value) {
         return text(value, 14, muted, false);
+    }
+
+    /** "Call Tally 0.9.1" from the installed package; just "Call Tally" when the version can't be read. */
+    private String versionLine() {
+        try {
+            String name = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            return name == null ? "Call Tally" : "Call Tally " + name;
+        } catch (Exception error) {
+            return "Call Tally";
+        }
     }
 
     private TextView sub(String value) {

@@ -76,4 +76,5 @@
     <item type="id" name="catch_line" />
     <item type="id" name="still_default" />
     <item type="id" name="switch_back" />
+    <item type="id" name="version_line" />
 </resources>
