@@ -134,11 +134,12 @@ abstract class Screen extends Activity {
         super.onCreate(saved);
         Sync.noteCrashes(this);
         density = getResources().getDisplayMetrics().density;
-        bg = getColor(R.color.bg);
+        // The greys are the theme's own; the white card, the text and the red are the same in every theme.
+        bg = attr(R.attr.ctBg);
         card = getColor(R.color.card);
-        card2 = getColor(R.color.card2);
-        line = getColor(R.color.line);
-        line2 = getColor(R.color.line2);
+        card2 = attr(R.attr.ctCard2);
+        line = attr(R.attr.ctLine);
+        line2 = attr(R.attr.ctLine2);
         txt = getColor(R.color.txt);
         muted = getColor(R.color.muted);
         loss = getColor(R.color.loss);
@@ -215,7 +216,10 @@ abstract class Screen extends Activity {
 
     // The frame
 
-    /** The coloured bar with a title, the body filling the middle, and a Close bar when closable. */
+    /**
+     * The coloured bar with a title, the body filling the middle, and a Close bar when closable. The bottom bar sits on
+     * the page with nothing between, so a scrolling body fades out at its edges rather than being cut off under it.
+     */
     void frame(String title, View content, boolean closable) {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -231,10 +235,16 @@ abstract class Screen extends Activity {
         header.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         body = content;
+        View scrolling = scrolling(content);
+        if (scrolling != null) {
+            scrolling.setVerticalFadingEdgeEnabled(true);
+            scrolling.setFadingEdgeLength(dp(24));
+        }
         root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         if (closable) {
             Button close = button("Close");
             close.setId(R.id.close);
+            quiet(close);
             close.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
@@ -252,12 +262,25 @@ abstract class Screen extends Activity {
         root.requestApplyInsets();
     }
 
-    /** A bar at the bottom holding one or more buttons side by side. Replaces the Close bar when set before frame(). */
+    /** The body itself when it scrolls, or the first scrolling part inside it; null when nothing in it scrolls. */
+    private static View scrolling(View view) {
+        if (view instanceof android.widget.ScrollView || view instanceof android.widget.AbsListView) return view;
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View found = scrolling(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /**
+     * A bar at the bottom holding one or more buttons side by side, on the page with no fill or line of its own.
+     * Replaces the Close bar when set before frame().
+     */
     LinearLayout footer(Button... buttons) {
         LinearLayout bar = row();
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(card);
-        bar.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[] {shape, edge()}));
+        bar.setBackground(null);
         for (int i = 0; i < buttons.length; i++) {
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
             if (i > 0) params.leftMargin = dp(8);
@@ -266,16 +289,6 @@ abstract class Screen extends Activity {
             bar.addView(buttons[i], params);
         }
         return bar;
-    }
-
-    /** A one-pixel line along the top of the bottom bar. */
-    private Drawable edge() {
-        GradientDrawable top = new GradientDrawable();
-        top.setColor(line);
-        android.graphics.drawable.LayerDrawable layer = new android.graphics.drawable.LayerDrawable(new Drawable[] {top});
-        layer.setLayerHeight(0, Math.max(1, dp(1)));
-        layer.setLayerGravity(0, Gravity.TOP);
-        return layer;
     }
 
     /** Keeps the bar's text clear of the status bar and the bottom clear of the navigation bar. */
@@ -395,6 +408,25 @@ abstract class Screen extends Activity {
         button.setTextColor(ink);
         button.setTypeface(medium());
         button.setBackground(touchable(shape(accent, accent, 0, radiusDp), radiusDp));
+    }
+
+    /** A quiet button: a word in the accent with no box, for the actions beside the one way forward. */
+    void quiet(Button button) {
+        quiet(button, accent, 14);
+    }
+
+    /** The same in muted and a little smaller, for an action on every row that should not draw the eye. */
+    void quietMuted(Button button) {
+        quiet(button, muted, 13);
+    }
+
+    private void quiet(Button button, int color, float sp) {
+        button.setTextColor(color);
+        button.setTypeface(medium());
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        button.setBackground(touchable(null, 8));
+        button.setMinHeight(dp(48));
+        button.setMinimumHeight(dp(48));
     }
 
     /** A chosen theme: outlined with the accent. */

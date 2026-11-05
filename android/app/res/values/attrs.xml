@@ -4,4 +4,9 @@
     <attr name="ctAccent" format="color" />
     <attr name="ctInk" format="color" />
     <attr name="ctTint" format="color" />
+    <!-- The chosen theme's page grey, second card, line and stronger line, set by each theme style. -->
+    <attr name="ctBg" format="color" />
+    <attr name="ctCard2" format="color" />
+    <attr name="ctLine" format="color" />
+    <attr name="ctLine2" format="color" />
 </resources>

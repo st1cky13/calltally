@@ -1289,6 +1289,27 @@ def main():
         check("the seeded month's total and its busy day match the reference", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
         run.shot("10c-seeded-month")
+        # 0.9.8: a look at the busy day's own screen and at the month's people, for the screenshots only.
+        cell = next((n for n in by_id(nodes, "day_cell") if n.get("content-desc") == words), None)
+        if cell is not None:
+            run.tap(cell)
+            run.wait_for(lambda ns: bool(by_id(ns, "tab_calls")) or bool(by_id(ns, "entry_action")), 15)
+            time.sleep(1)
+            run.shot("11-day-view")
+            run.sh("input", "keyevent", "KEYCODE_BACK")
+            nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title, 15)
+        else:
+            print("info  skipped: the day view shot, as the seeded busy day's cell was not found")
+        if by_id(nodes, "total_month"):
+            run.tap(by_id(nodes, "total_month")[0])
+            run.wait_for(lambda ns: bool(by_id(ns, "contact_row")), 15)
+            time.sleep(1)
+            run.shot("12-by-contact")
+            run.sh("input", "keyevent", "KEYCODE_BACK")
+            run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title, 15)
+        else:
+            print("info  skipped: the by-contact shot, as the month row was not found")
+        nodes = run.nodes()
         # The same month in dark, for a look at the busy day's tile; the screen is drawn again and keeps its month.
         try:
             run.adb("shell", "cmd", "uimode", "night", "yes")

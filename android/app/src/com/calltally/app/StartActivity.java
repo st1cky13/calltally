@@ -74,7 +74,8 @@ public class StartActivity extends Screen {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(20), dp(16), dp(20), dp(16));
-        TextView welcome = text("Welcome to Call Tally", 20, txt, true);
+        TextView welcome = text("Welcome to Call Tally", 24, txt, false);
+        welcome.setTypeface(medium());
         welcome.setId(R.id.start_title);
         column.addView(welcome, wide());
         String[] lines = {
@@ -87,7 +88,7 @@ public class StartActivity extends Screen {
         };
         for (int i = 0; i < lines.length; i++) {
             TextView line = text(lines[i], 15, i == lines.length - 1 ? txt : muted, false);
-            line.setLineSpacing(0, 1.15f);
+            line.setLineSpacing(0, 1.3f);
             if (i == 0) line.setId(R.id.start_text);
             LinearLayout.LayoutParams gap = wide();
             gap.topMargin = dp(i == 0 ? 16 : 12);

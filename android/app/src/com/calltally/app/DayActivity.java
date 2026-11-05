@@ -14,7 +14,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/** One day: its totals, its calls and texts on two tabs, and Ignore or Restore on each. */
+/** One day: its call time large on top, its totals, its calls and texts on two tabs, and Ignore or Restore on each. */
 public class DayActivity extends Screen {
     /** The tab last chosen, kept while the app is open. */
     private static String chosenTab;
@@ -24,6 +24,7 @@ public class DayActivity extends Screen {
     private List<Record.Item> items = new ArrayList<>();
     private boolean hide;
     private int asking;
+    private TextView total;
     private TextView line;
     private Button calls;
     private Button texts;
@@ -43,21 +44,30 @@ public class DayActivity extends Screen {
         head.setOrientation(LinearLayout.VERTICAL);
         head.setBackgroundColor(card);
         head.setPadding(dp(16), dp(10), dp(16), dp(10));
+        // The day's call time, large, with the summary line under it saying what it is made of.
+        total = text("", 28, txt, false);
+        total.setTypeface(medium());
+        figures(total);
+        head.addView(total, wide());
         line = text("", 14, muted, false);
         line.setId(R.id.day_line);
         head.addView(line, wide());
+        // One track in the second card's grey; the chosen half sits in it as a white card with an accent line.
         LinearLayout tabs = row();
+        tabs.setBackground(shape(card2, 0, 0, 10));
+        tabs.setPadding(dp(2), dp(2), dp(2), dp(2));
         calls = button("Calls");
         calls.setId(R.id.tab_calls);
         texts = button("Texts");
         texts.setId(R.id.tab_texts);
-        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        LinearLayout.LayoutParams other = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        other.leftMargin = dp(6);
-        tabs.addView(calls, half);
-        tabs.addView(texts, other);
-        LinearLayout.LayoutParams tabsGap = wide();
-        tabsGap.topMargin = dp(8);
+        for (Button half : new Button[] {calls, texts}) {
+            half.setMinHeight(0);
+            half.setMinimumHeight(0);
+            half.setPadding(dp(8), 0, dp(8), 0);
+            tabs.addView(half, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        }
+        LinearLayout.LayoutParams tabsGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44));
+        tabsGap.topMargin = dp(10);
         head.addView(tabs, tabsGap);
         tabs.setVisibility(View.INVISIBLE);
         calls.setOnClickListener(new View.OnClickListener() {
@@ -135,11 +145,13 @@ public class DayActivity extends Screen {
                     public void run() {
                         if (mine != asking || isDestroyed()) return;
                         if (trouble != null) {
+                            total.setText("");
                             line.setText(trouble);
                             return;
                         }
                         items = found;
                         hide = hideIt;
+                        total.setText(Words.fullTime(sums == null ? 0 : sums.callS));
                         line.setText(sums == null ? Words.summary(0, 0, 0) : Words.summary(sums.callS, sums.calls, sums.texts));
                         if (tab == null) {
                             // The tab last chosen when it has anything, otherwise Calls if the day has a call, else Texts.
@@ -164,13 +176,8 @@ public class DayActivity extends Screen {
     }
 
     private void showTab() {
-        if ("call".equals(tab)) {
-            filled(calls);
-            plain(texts);
-        } else {
-            plain(calls);
-            filled(texts);
-        }
+        tab(calls, "call".equals(tab));
+        tab(texts, "text".equals(tab));
         calls.setSelected("call".equals(tab));
         texts.setSelected("text".equals(tab));
         rows.removeAllViews();
@@ -190,6 +197,13 @@ public class DayActivity extends Screen {
         hiddenNote.setVisibility(hidden > 0 ? View.VISIBLE : View.GONE);
     }
 
+    /** The chosen half: a white card with an accent line. The other: clear, a ripple when touched. */
+    private void tab(Button half, boolean chosen) {
+        half.setTextColor(chosen ? txt : muted);
+        half.setTypeface(medium());
+        half.setBackground(chosen ? touchable(shape(card, accent, 1, 8)) : touchable(null, 8));
+    }
+
     private View row(final Record.Item item) {
         boolean gone = item.ignoredAt != null;
         LinearLayout row = row();
@@ -197,7 +211,8 @@ public class DayActivity extends Screen {
         row.setPadding(dp(16), dp(8), dp(12), dp(8));
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
-        TextView who = text(item.contact, 15, txt, true);
+        TextView who = text(item.contact, 15, txt, false);
+        who.setTypeface(medium());
         TextView what = text(Words.status(item.kind, item.direction, item.at, item.durationS), 13, muted, false);
         info.addView(who);
         info.addView(what);
@@ -212,8 +227,14 @@ public class DayActivity extends Screen {
                 view.setAlpha(0.55f);
             }
         }
+        // Quiet, so the names and times lead; its own colour, width and ripple still say it can be tapped.
         final Button action = button(gone ? "Restore" : "Ignore");
         action.setId(R.id.entry_action);
+        quietMuted(action);
+        action.setMinHeight(dp(44));
+        action.setMinimumHeight(dp(44));
+        action.setMinWidth(dp(64));
+        action.setMinimumWidth(dp(64));
         action.setContentDescription(action.getText() + " " + item.contact + " at " + Words.clock(item.at));
         action.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -221,7 +242,9 @@ public class DayActivity extends Screen {
                 change(action, item);
             }
         });
-        row.addView(action);
+        LinearLayout.LayoutParams actionGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actionGap.leftMargin = dp(8);
+        row.addView(action, actionGap);
         return row;
     }
 

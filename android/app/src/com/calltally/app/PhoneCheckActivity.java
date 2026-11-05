@@ -82,6 +82,7 @@ public class PhoneCheckActivity extends Screen {
         });
         Button close = button("Close");
         close.setId(R.id.close);
+        quiet(close);
         close.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

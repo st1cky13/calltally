@@ -136,8 +136,10 @@ public class PayActivity extends Screen {
         scroll.setBackgroundColor(card);
         scroll.addView(column);
 
+        // Confirm is the one way forward and the only filled button; the others are quiet words beside it.
         close = button("Close");
         close.setId(R.id.close);
+        quiet(close);
         close.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -147,6 +149,7 @@ public class PayActivity extends Screen {
         // "Revert changes" does not fit beside Reset and Confirm on a narrow phone.
         revert = button("Revert");
         revert.setId(R.id.revert);
+        quiet(revert);
         revert.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -158,6 +161,7 @@ public class PayActivity extends Screen {
         });
         reset = button("Reset");
         reset.setId(R.id.pay_reset);
+        quiet(reset);
         // Off until the record is read; it stays off when the record can't be read.
         enable(reset, false);
         reset.setOnClickListener(new View.OnClickListener() {
@@ -174,6 +178,7 @@ public class PayActivity extends Screen {
         });
         confirm = button("Confirm");
         confirm.setId(R.id.confirm);
+        filled(confirm);
         confirm.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -182,6 +187,7 @@ public class PayActivity extends Screen {
         });
         skip = button("Skip");
         skip.setId(R.id.pay_skip);
+        quiet(skip);
         skip.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

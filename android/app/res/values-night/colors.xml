@@ -25,4 +25,25 @@
     <color name="slate_accent">#a9bccd</color>
     <color name="slate_ink">#111c26</color>
     <color name="slate_tint">#1Fa9bccd</color>
+    <!-- Each theme's own page grey, second card, lines and stronger lines; Teal's are the greys above. -->
+    <color name="teal_bg">#0c1312</color>
+    <color name="teal_card2">#1a2826</color>
+    <color name="teal_line">#24342f</color>
+    <color name="teal_line2">#33483f</color>
+    <color name="blue_bg">#0c0f13</color>
+    <color name="blue_card2">#1a2028</color>
+    <color name="blue_line">#242b34</color>
+    <color name="blue_line2">#333c48</color>
+    <color name="plum_bg">#120d12</color>
+    <color name="plum_card2">#251c26</color>
+    <color name="plum_line">#312632</color>
+    <color name="plum_line2">#443645</color>
+    <color name="amber_bg">#13100c</color>
+    <color name="amber_card2">#28231a</color>
+    <color name="amber_line">#342e24</color>
+    <color name="amber_line2">#484033</color>
+    <color name="slate_bg">#0e0f11</color>
+    <color name="slate_card2">#1d2125</color>
+    <color name="slate_line">#282c30</color>
+    <color name="slate_line2">#383d43</color>
 </resources>
