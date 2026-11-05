@@ -150,7 +150,7 @@ public class RulesCheck {
         System.out.println("words-clock " + Words.clockTime(1026) + " " + Words.clockTime(4097) + " " + Words.clockTime(59) + " " + Words.clockTime(0)
             + " " + Words.clockTime(36000));
         System.out.println("words-full " + Words.fullTime(1183) + " | " + Words.fullTime(4179) + " | " + Words.fullTime(47) + " | " + Words.fullTime(3600));
-        System.out.println("words-summary " + Words.summary(1154, 16, 32) + " | " + Words.summary(0, 1, 1));
+        System.out.println("words-counts " + Words.counts(5, 9) + " | " + Words.counts(1, 1));
         System.out.println("words-at " + Words.clock("2026-11-03 00:05:09") + " " + Words.clock("2026-11-03 12:30:00") + " " + Words.clock("2026-11-03 15:08:00"));
         System.out.println("words-day " + Words.longDay(java.time.LocalDate.of(2026, 11, 3)) + " | "
             + Words.weekdayDay(java.time.LocalDate.of(2026, 10, 25), java.time.LocalDate.of(2026, 11, 4)) + " | "

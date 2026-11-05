@@ -6,7 +6,11 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextWatcher;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -15,7 +19,6 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -87,6 +90,7 @@ public class WhoActivity extends Screen {
         search.setId(R.id.who_search);
         search.setHint("Search by name or number");
         search.setTextColor(txt);
+        search.setTextSize(16);
         search.setHintTextColor(muted);
         // A rounded box with a magnifier at its start.
         search.setBackground(shape(card, line, 1, 12));
@@ -128,6 +132,8 @@ public class WhoActivity extends Screen {
         // A quiet word at the right under the box, as it acts on what the search shows.
         LinearLayout.LayoutParams tickAllPlace = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tickAllPlace.gravity = Gravity.END;
+        // Its word lines up with the box's right edge: the button's own padding hangs past it.
+        tickAllPlace.setMarginEnd(-tickAll.getPaddingEnd());
         page.addView(tickAll, tickAllPlace);
         list.setDivider(new android.graphics.drawable.ColorDrawable(line));
         list.setDividerHeight(Math.max(1, dp(1)));
@@ -350,36 +356,28 @@ public class WhoActivity extends Screen {
 
         @Override
         public View getView(int position, View view, ViewGroup parent) {
-            FrameLayout row = (FrameLayout) view;
-            if (row == null) {
-                // The tick box covers the whole row, name and numbers, so a tap anywhere on them ticks it. The name sits
-                // level with the box and the numbers just under it, both from the name's left edge.
-                row = new FrameLayout(WhoActivity.this);
-                row.setPadding(0, dp(14), 0, dp(14));
-                CheckBox box = new CheckBox(WhoActivity.this);
+            CheckBox box = (CheckBox) view;
+            if (box == null) {
+                // The tick box covers the whole row, name and numbers, so a tap anywhere on them ticks it. Its text is the
+                // name with the numbers on the line under it, so a long name that wraps pushes the numbers down, and
+                // TalkBack reads both in one stop.
+                box = new CheckBox(WhoActivity.this);
                 box.setTextSize(16);
                 box.setTextColor(txt);
-                box.setGravity(Gravity.TOP | Gravity.START);
+                box.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
                 box.setButtonTintList(new android.content.res.ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {accent, muted}));
-                TextView detail = new TextView(WhoActivity.this);
-                detail.setTextSize(13);
-                detail.setTextColor(muted);
-                Drawable tick = box.getButtonDrawable();
-                int name = box.getLineHeight();
-                int above = tick == null ? 0 : Math.max(0, (tick.getIntrinsicHeight() - name) / 2);
-                box.setPadding(box.getPaddingLeft(), above, box.getPaddingRight(), detail.getLineHeight());
+                box.setPadding(box.getPaddingLeft(), dp(14), box.getPaddingRight(), dp(14));
                 box.setMinHeight(dp(44));
-                detail.setPadding(box.getCompoundPaddingLeft(), 0, 0, 0);
-                FrameLayout.LayoutParams under = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                under.topMargin = above + name;
-                row.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                row.addView(detail, under);
+                box.setLayoutParams(new ListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
-            CheckBox box = (CheckBox) row.getChildAt(0);
-            TextView detail = (TextView) row.getChildAt(1);
             final Line line = shown.get(position);
             box.setOnCheckedChangeListener(null);
-            box.setText(line.name);
+            String numbers = String.join(", ", line.numbers) + (line.contact == null ? " · not on the phone" : "");
+            SpannableString words = new SpannableString(line.name + "\n" + numbers);
+            int from = line.name.length() + 1;
+            words.setSpan(new AbsoluteSizeSpan(13, true), from, words.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            words.setSpan(new ForegroundColorSpan(muted), from, words.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            box.setText(words);
             box.setChecked(line.ticked);
             box.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
                 @Override
@@ -387,8 +385,7 @@ public class WhoActivity extends Screen {
                     set(line, checked);
                 }
             });
-            detail.setText(String.join(", ", line.numbers) + (line.contact == null ? " · not on the phone" : ""));
-            return row;
+            return box;
         }
     }
 }

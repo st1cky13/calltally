@@ -392,12 +392,19 @@ def by_id(nodes, name):
 
 def text_of(nodes, name):
     found = by_id(nodes, name)
-    return found[0].get("text", "") if found else None
+    return spaced(found[0].get("text", "")) if found else None
+
+
+def spaced(text):
+    """Text with the non-breaking spaces the screens use to keep a date whole read as plain spaces, for comparing."""
+    return text.replace("\u00a0", " ")
 
 
 def boxes(ns):
-    """The app's check boxes on screen, by their words: "true" or "false"."""
-    return {n.get("text"): n.get("checked") for n in ns if n.get("class", "").endswith("CheckBox") and n.get("package") == APP}
+    """The app's check boxes on screen, by the first line of their words (Who counts puts the numbers on the next line):
+    "true" or "false"."""
+    return {(n.get("text") or "").split("\n")[0]: n.get("checked") for n in ns
+            if n.get("class", "").endswith("CheckBox") and n.get("package") == APP}
 
 
 def full_time(s):
@@ -632,7 +639,7 @@ def main():
               run.granted() == set(PERMISSIONS) and bool(by_id(nodes, "who_next")) and not by_id(nodes, "close")
               and (text_of(nodes, "who_note") or "").startswith("Tick the people whose calls and texts should count")
               and "true" not in boxes(nodes).values(), f"{sorted(run.granted())} {text_of(nodes, 'who_note')!r} {boxes(nodes)}")
-        run.tap_text(nodes, "Dana-Work")
+        run.tap([n for n in nodes if n.get("class", "").endswith("CheckBox") and (n.get("text") or "").split("\n")[0] == "Dana-Work"][0])
         nodes = run.wait_for(lambda ns: boxes(ns).get("Dana-Work") == "true", 15)
         run.tap(by_id(nodes, "who_next")[0])
         nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_skip")), 20)

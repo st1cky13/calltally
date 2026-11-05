@@ -33,11 +33,6 @@ final class Words {
         return n + " " + word + (n == 1 ? "" : "s");
     }
 
-    /** "19m 14s on 16 calls · 32 texts" */
-    static String summary(long callS, long calls, long texts) {
-        return fullTime(callS) + " on " + plural(calls, "call") + " · " + plural(texts, "text");
-    }
-
     /** "16 calls · 32 texts", for the line under a call time already shown large. */
     static String counts(long calls, long texts) {
         return plural(calls, "call") + " · " + plural(texts, "text");

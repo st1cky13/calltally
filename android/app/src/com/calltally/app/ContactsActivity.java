@@ -29,11 +29,10 @@ public class ContactsActivity extends Screen {
         page.setBackgroundColor(card);
         String label = getIntent().getStringExtra("label");
         if (label == null) label = "All time";
-        // The sheet's call time on top, named by its label, with the calls and texts it is made of under it.
+        // The sheet's call time on top, with the calls and texts it is made of under it; the title bar names it.
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.VERTICAL);
         head.setPadding(edge(), dp(10), edge(), dp(10));
-        head.addView(caption(label), wide());
         total = text("", 22, txt, false);
         total.setTypeface(medium());
         figures(total);

@@ -2,8 +2,11 @@ package com.calltally.app;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.ClipDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -339,10 +342,12 @@ public class PayActivity extends Screen {
                 }
                 LocalDate date = view.atDay(day);
                 boolean shaded = shadeTo != null && date.isAfter(shadeFrom) && date.isBefore(shadeTo);
-                // The band's ends in this row are round: at the row's edges, the month's edges, and beside a filled day.
-                boolean roundLeft = c == 0 || day == 1 || date.minusDays(1).equals(shadeFrom);
-                boolean roundRight = c == 6 || day == count || date.plusDays(1).equals(shadeTo);
-                row.addView(dayButton(date, shaded, roundLeft, roundRight), cellParams);
+                // The band's ends in this row are round at the row's edges and the month's edges. Beside a filled day it
+                // runs on into that day's square, which draws the band up to itself on that side.
+                boolean edgeLeft = c == 0 || day == 1, edgeRight = c == 6 || day == count;
+                boolean bandLeft = shadeTo != null && date.equals(shadeTo) && !edgeLeft && date.minusDays(1).isAfter(shadeFrom);
+                boolean bandRight = shadeTo != null && date.equals(shadeFrom) && !edgeRight && date.plusDays(1).isBefore(shadeTo);
+                row.addView(dayButton(date, shaded, edgeLeft, edgeRight, bandLeft, bandRight), cellParams);
             }
             grid.addView(row, rowParams);
         }
@@ -361,7 +366,8 @@ public class PayActivity extends Screen {
         return latest;
     }
 
-    private Button dayButton(final LocalDate date, boolean shaded, boolean roundLeft, boolean roundRight) {
+    private Button dayButton(final LocalDate date, boolean shaded, boolean roundLeft, boolean roundRight, boolean bandLeft,
+                             boolean bandRight) {
         Button button = button(String.valueOf(date.getDayOfMonth()));
         button.setId(R.id.cal_day);
         button.setPadding(0, 0, 0, 0);
@@ -376,9 +382,19 @@ public class PayActivity extends Screen {
         int side = dp(2);
         if (isMarked) {
             filled(button);
-            button.setBackground(new InsetDrawable(button.getBackground(), side, 0, side, 0));
+            Drawable square = new InsetDrawable(button.getBackground(), side, 0, side, 0);
+            if (bandLeft || bandRight) {
+                // The band reaches under this square from the side it comes in, so it meets the square with no gap.
+                GradientDrawable strip = new GradientDrawable();
+                strip.setColor(band());
+                ClipDrawable half = new ClipDrawable(strip, bandLeft ? Gravity.LEFT : Gravity.RIGHT, ClipDrawable.HORIZONTAL);
+                half.setLevel(5000);
+                square = new LayerDrawable(new Drawable[] {half, square});
+            }
+            button.setBackground(square);
         } else if (shaded) {
-            // Round only at the band's ends in the row, and a little in from them, so it lines up with the filled days.
+            // Round only at the band's ends in the row, and a little in from them there, so it lines up with the filled
+            // days; beside a filled day it is square and runs to the cell's edge.
             float r = dp(8), left = roundLeft ? r : 0, right = roundRight ? r : 0;
             GradientDrawable strip = new GradientDrawable();
             strip.setColor(band());
@@ -445,13 +461,14 @@ public class PayActivity extends Screen {
             line.append("Now pick the last day.");
         } else if (ready) {
             // "Pay period: Oct 25 – Nov 7 → Nov 28 – Dec 11, 14 days"
+            // A date never splits; when the line is too long it breaks before the arrow.
             line.append("Pay period: ");
-            value(line, saved == null ? "none" : saved.current(today));
-            line.append(" → ");
-            value(line, off ? "none" : picked().span(today));
+            value(line, whole(saved == null ? "none" : saved.current(today)));
+            line.append(" →\u00a0");
+            value(line, whole(off ? "none" : picked().span(today)));
         } else if (saved != null) {
             line.append("Pay period ");
-            value(line, saved.current(today) + ", " + Words.plural(saved.days, "day"));
+            value(line, whole(saved.current(today)) + ", " + Words.plural(saved.days, "day"));
         }
         preview.setText(line);
         if (!ready) return;
@@ -460,6 +477,14 @@ public class PayActivity extends Screen {
         text.append(" → ");
         strong(text, off ? "none" : Words.weekdayDay(chosen, today));
         review.setText(text);
+    }
+
+    /**
+     * Dates and the dash between them held together with non-breaking spaces, "Nov 10 – Nov 16"; the line may still break
+     * after a comma before the day count.
+     */
+    private static String whole(String dates) {
+        return dates.replace(' ', '\u00a0').replaceAll(",\u00a0(?=\\d+\u00a0days?$)", ", ");
     }
 
     /** The pay periods from the first and last day picked. */
