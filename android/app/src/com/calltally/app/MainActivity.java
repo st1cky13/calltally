@@ -238,11 +238,11 @@ public class MainActivity extends Screen {
 
         // One shape like the totals rows: the arrows at its two ends step the period, the middle lists it by contact.
         periodLine = row();
-        periodLine.setBackground(touchable(shape(soft(), 0, 0, CORNER_CARD), CORNER_CARD));
+        periodLine.setBackground(shape(soft(), 0, 0, CORNER_CARD));
         periodPrev = arrow(R.drawable.chevron_left, "Previous pay period", R.id.period_prev);
         periodNext = arrow(R.drawable.chevron_right, "Next pay period", R.id.period_next);
         periodRow = totalRow(R.id.total_period);
-        periodRow.setBackground(touchable(null, CORNER_CARD));
+        periodRow.setBackground(touchable(null, 0));
         periodLine.addView(periodPrev, new LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT));
         periodLine.addView(periodRow, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         periodLine.addView(periodNext, new LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT));

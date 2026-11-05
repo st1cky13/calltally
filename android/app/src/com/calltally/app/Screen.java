@@ -393,7 +393,7 @@ abstract class Screen extends Activity {
     /** The same with corners of this radius, 24 for a pill; the touch has a mask of its own so it shows on the accent. */
     void filled(Button button, float radiusDp) {
         button.setTextColor(ink);
-        button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        button.setTypeface(medium());
         button.setBackground(touchable(shape(accent, accent, 0, radiusDp), radiusDp));
     }
 
