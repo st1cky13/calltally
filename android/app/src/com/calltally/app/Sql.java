@@ -8,7 +8,7 @@ final class Sql {
     private Sql() {}
 
     static final String NAME = "calltally.db";
-    static final int VERSION = 1;
+    static final int VERSION = 2;
 
     /** The entries table and its indexes, exactly as the server keeps them. deleted_at is the Ignore mark. */
     static final String[] SCHEMA = {
@@ -23,6 +23,9 @@ final class Sql {
         "CREATE TABLE IF NOT EXISTS numbers(person_key TEXT NOT NULL, number TEXT NOT NULL, number_key TEXT NOT NULL,"
             + " PRIMARY KEY(person_key, number_key))",
         "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        // Version 2: how each conversation of more than one person was first filed, a chat under one number or a group
+        // (thread-N), kept so a change of ticks never files its texts a second time under another identity.
+        "CREATE TABLE IF NOT EXISTS conversations(thread INTEGER PRIMARY KEY, number TEXT NOT NULL, contact TEXT NOT NULL)",
         "INSERT OR IGNORE INTO settings(key,value) VALUES('pay_period_start','2026-10-25')",
         "INSERT OR IGNORE INTO settings(key,value) VALUES('pay_period_days','14')",
     };

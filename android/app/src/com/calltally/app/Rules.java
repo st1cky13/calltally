@@ -128,6 +128,36 @@ final class Rules {
         return out;
     }
 
+    /**
+     * People in the table whose contact is no longer found by its key, but whose number now belongs to a contact with a
+     * key the table doesn't know: Android gave the same contact a new key, as it can when contacts merge or sync again.
+     * Gives old key to new key, each new key claimed once, so the person keeps one line, their tick and their numbers.
+     */
+    static Map<String, String> movedKeys(List<Person> known, List<Person> phone) {
+        Map<String, String> moved = new java.util.LinkedHashMap<>();
+        if (phone == null || phone.isEmpty()) return moved;
+        Set<String> knownKeys = new HashSet<>(), phoneKeys = new HashSet<>();
+        for (Person person : known) knownKeys.add(person.key);
+        for (Person contact : phone) phoneKeys.add(contact.key);
+        Set<String> claimed = new HashSet<>();
+        for (Person person : known) {
+            if (phoneKeys.contains(person.key)) continue;
+            Set<String> mine = new HashSet<>();
+            for (String number : person.numbers) if (!numberKey(number).isEmpty()) mine.add(numberKey(number));
+            for (Person contact : phone) {
+                if (knownKeys.contains(contact.key) || claimed.contains(contact.key)) continue;
+                boolean shares = false;
+                for (String number : contact.numbers) if (mine.contains(numberKey(number))) shares = true;
+                if (shares) {
+                    moved.put(person.key, contact.key);
+                    claimed.add(contact.key);
+                    break;
+                }
+            }
+        }
+        return moved;
+    }
+
     /** The first list, then each number of the second whose last ten digits aren't in it yet. Numbers without digits are left out. */
     static List<String> joinNumbers(List<String> have, List<String> more) {
         List<String> out = new ArrayList<>();
@@ -220,10 +250,23 @@ final class Rules {
         private final Map<String, String> workNames;
         private final Map<Long, List<String>> threadPeople;
         private final Map<Long, Who> threadWho = new HashMap<>();
+        private final Map<Long, Who> remembered;
+        private final Map<Long, Who> decided = new HashMap<>();
 
         Texts(Map<String, String> workNames, Map<Long, List<String>> threadPeople) {
+            this(workNames, threadPeople, new HashMap<Long, Who>());
+        }
+
+        /** remembered: how earlier runs filed each conversation of more than one person, by thread id. */
+        Texts(Map<String, String> workNames, Map<Long, List<String>> threadPeople, Map<Long, Who> remembered) {
             this.workNames = workNames;
             this.threadPeople = threadPeople;
+            this.remembered = remembered;
+        }
+
+        /** Conversations filed for the first time in this run, for the record to remember. */
+        Map<Long, Who> decided() {
+            return decided;
         }
 
         /**
@@ -256,7 +299,11 @@ final class Rules {
         }
 
         private Who whoInThread(long thread, List<String> people) {
-            if (!threadWho.containsKey(thread)) threadWho.put(thread, classify(thread, people, workNames));
+            if (!threadWho.containsKey(thread)) {
+                Who who = classify(thread, people, workNames, remembered.get(thread));
+                threadWho.put(thread, who);
+                if (who != null && !remembered.containsKey(thread)) decided.put(thread, who);
+            }
             return threadWho.get(thread);
         }
 
@@ -268,6 +315,17 @@ final class Rules {
             }
             return count;
         }
+    }
+
+    /**
+     * Who counts' search: the digits to look for in numbers when the text is made only of digits and phone punctuation
+     * (spaces, + - . ( )), or null when it holds anything else and names are searched instead.
+     */
+    static String searchDigits(String query) {
+        String text = query == null ? "" : query.trim();
+        if (!text.matches("[0-9+\\-.()\\s]+")) return null;
+        String digits = text.replaceAll("\\D", "");
+        return digits.isEmpty() ? null : digits;
     }
 
     /** The last ten digits, so +1 (555) 123-4567 and 5551234567 match. Empty if there are no digits. */
@@ -293,6 +351,15 @@ final class Rules {
      * count its texts a second time. Anyone not ticked appears only as a count.
      */
     static Who classify(long thread, List<String> addresses, Map<String, String> workNames) {
+        return classify(thread, addresses, workNames, null);
+    }
+
+    /**
+     * The same, keeping a conversation filed the way it was first filed (filed, or null the first time). Ticks change
+     * which of the two a conversation would be, a chat with one person or a group, and filing it the other way would give
+     * its texts a second identity and count them twice. A conversation with no ticked person still counts nothing.
+     */
+    static Who classify(long thread, List<String> addresses, Map<String, String> workNames, Who filed) {
         Set<String> seen = new LinkedHashSet<>();
         List<String> work = new ArrayList<>();
         String workNumber = null;
@@ -309,7 +376,13 @@ final class Rules {
             }
         }
         if (work.isEmpty()) return null;
-        if (work.size() == 1 && others <= 1) return new Who(work.get(0), workNumber);
+        if (filed != null && !filed.number.startsWith("thread-")) {
+            // A chat stays the chat with that number, under its current name while it is ticked, else the name kept.
+            String name = workNames.get(numberKey(filed.number));
+            return new Who(name != null ? name : filed.contact, filed.number);
+        }
+        boolean group = filed != null || !(work.size() == 1 && others <= 1);
+        if (!group) return new Who(work.get(0), workNumber);
         StringBuilder label = new StringBuilder("Group: ").append(String.join(", ", work));
         if (others > 0) label.append(" +").append(others);
         String text = label.length() > MAX_CONTACT ? label.substring(0, MAX_CONTACT) : label.toString();

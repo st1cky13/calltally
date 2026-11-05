@@ -3,9 +3,12 @@ package com.calltally.app;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.DatabaseErrorHandler;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -27,6 +30,9 @@ final class Record {
         }
     }
 
+    /** What a screen says when the record can't be read for any other reason. The file is left as it is. */
+    static final String UNREADABLE = "The record couldn't be read.";
+
     private static Record shared;
     private final Helper helper;
 
@@ -39,9 +45,41 @@ final class Record {
         return shared;
     }
 
+    /**
+     * When SQLite says the record is damaged, Android's own handler deletes the file and starts an empty one. This one
+     * moves the file aside under a new name instead, so nothing is erased, and leaves a note for the month screen.
+     */
+    private static final class SetAside implements DatabaseErrorHandler {
+        private final Context context;
+
+        SetAside(Context context) {
+            this.context = context;
+        }
+
+        @Override
+        public void onCorruption(SQLiteDatabase db) {
+            String path = db.getPath();
+            try {
+                db.close();
+            } catch (RuntimeException ignored) {
+                // Closing a damaged file can fail; moving it is what matters.
+            }
+            if (path == null || path.equals(":memory:")) return;
+            String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+            File file = new File(path);
+            File aside = new File(path + ".damaged-" + stamp);
+            boolean moved = file.renameTo(aside);
+            for (String extra : new String[] {"-journal", "-wal", "-shm"}) {
+                File beside = new File(path + extra);
+                if (beside.exists()) beside.renameTo(new File(aside.getPath() + extra));
+            }
+            Sync.noteDamaged(context, moved ? aside.getName() : null);
+        }
+    }
+
     private static final class Helper extends SQLiteOpenHelper {
         Helper(Context context) {
-            super(context, Sql.NAME, null, Sql.VERSION);
+            super(context, Sql.NAME, null, Sql.VERSION, new SetAside(context));
             // One file with nothing beside it, so a copy of it is the whole record.
             setWriteAheadLoggingEnabled(false);
         }
@@ -53,7 +91,8 @@ final class Record {
 
         @Override
         public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-            // Version 1 is the first.
+            // Every statement only adds what is missing, so running them all brings any older record up to date.
+            for (String statement : Sql.SCHEMA) db.execSQL(statement);
         }
 
         @Override
@@ -82,9 +121,22 @@ final class Record {
 
     /** Adds a run's entries in one go with the server's repeat rule. */
     Ledger.Added add(List<Rules.Entry> entries) {
+        return add(entries, new HashMap<Long, Rules.Who>());
+    }
+
+    /** The same, also remembering how conversations met for the first time were filed, in the same transaction. */
+    Ledger.Added add(List<Rules.Entry> entries, Map<Long, Rules.Who> filed) {
         final SQLiteDatabase db = db();
         db.beginTransaction();
         try {
+            for (Map.Entry<Long, Rules.Who> conversation : filed.entrySet()) {
+                ContentValues values = new ContentValues();
+                values.put("thread", conversation.getKey());
+                values.put("number", conversation.getValue().number);
+                values.put("contact", conversation.getValue().contact);
+                // The first filing wins: a later run never changes how a conversation is filed.
+                db.insertWithOnConflict("conversations", null, values, SQLiteDatabase.CONFLICT_IGNORE);
+            }
             Ledger.Added added = Ledger.add(new Ledger.Book() {
                 @Override
                 public String find(Ledger.Row row) {
@@ -121,6 +173,15 @@ final class Record {
         } finally {
             db.endTransaction();
         }
+    }
+
+    /** How each conversation of more than one person was first filed, by thread id. */
+    Map<Long, Rules.Who> conversations() {
+        Map<Long, Rules.Who> out = new HashMap<>();
+        try (Cursor c = db().rawQuery("SELECT thread, number, contact FROM conversations", null)) {
+            while (c.moveToNext()) out.put(c.getLong(0), new Rules.Who(c.getString(2), c.getString(1)));
+        }
+        return out;
     }
 
     /** Sets or clears an entry's Ignore mark. False when there is no such entry. */
@@ -283,6 +344,12 @@ final class Record {
         SQLiteDatabase db = db();
         db.beginTransaction();
         try {
+            // A contact Android gave a new key keeps its one line: the person takes the new key with their tick and numbers.
+            for (Map.Entry<String, String> moved : Rules.movedKeys(people(), phone).entrySet()) {
+                String[] keys = {moved.getValue(), moved.getKey()};
+                db.execSQL("UPDATE people SET key=? WHERE key=?", keys);
+                db.execSQL("UPDATE numbers SET person_key=? WHERE person_key=?", keys);
+            }
             for (Rules.Person person : Rules.refreshPeople(people(), phone)) {
                 ContentValues values = new ContentValues();
                 values.put("name", person.name);

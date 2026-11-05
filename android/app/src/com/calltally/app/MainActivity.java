@@ -517,6 +517,8 @@ public class MainActivity extends Screen {
         PayPeriod period;
         boolean followed;
         String problem;
+        String lookMode;
+        String lookTheme;
     }
 
     /** Asks the record away from the screen; an answer for a month or period no longer shown is dropped. */
@@ -537,6 +539,8 @@ public class MainActivity extends Screen {
                 try {
                     Record record = Record.get(context);
                     found.period = PayPeriod.of(record.setting("pay_period_start"), record.setting("pay_period_days"));
+                    found.lookMode = record.setting("look_mode");
+                    found.lookTheme = record.setting("look_theme");
                     found.days = record.days(month.atDay(1).toString(), month.atEndOfMonth().toString());
                     found.monthTotals = record.totals(month.atDay(1).toString(), month.atEndOfMonth().toString());
                     found.all = record.totals();
@@ -549,6 +553,8 @@ public class MainActivity extends Screen {
                     }
                 } catch (Record.TooNew error) {
                     found.problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    found.problem = Record.UNREADABLE;
                 }
                 runOnUiThread(new Runnable() {
                     @Override
@@ -561,6 +567,11 @@ public class MainActivity extends Screen {
     }
 
     private void show(Found found) {
+        // The record holds the look; a phone with no quick copy of it yet takes it from there.
+        if (found.lookMode != null && found.lookTheme != null && adoptMissing(this, found.lookMode, found.lookTheme)) {
+            redraw();
+            return;
+        }
         String trouble = found.problem != null ? found.problem : permissionText != null ? permissionText : Sync.problem(this);
         problem.setText(trouble == null ? "" : trouble);
         problem.setVisibility(trouble == null ? View.GONE : View.VISIBLE);

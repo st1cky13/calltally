@@ -129,13 +129,23 @@ final class Sync {
     static String problem(Context context) {
         SharedPreferences saved = prefs(context);
         StringBuilder out = new StringBuilder();
+        String damaged = saved.getString("damaged", null);
+        if (damaged != null) out.append(damaged);
         String problem = saved.getString("problem", null);
         String schedule = saved.getString("schedule_problem", null);
         String crash = saved.getString("crash", null);
-        if (problem != null) out.append(problem);
+        if (problem != null) out.append(out.length() > 0 ? "\n" : "").append(problem);
         if (schedule != null) out.append(out.length() > 0 ? "\n" : "").append("Background runs aren't set up: ").append(schedule);
         if (crash != null) out.append(out.length() > 0 ? "\n" : "").append("Last crash: ").append(crash);
         return out.length() == 0 ? null : out.toString();
+    }
+
+    /** Left by the record when SQLite found it damaged and it was moved aside. Shown on the month screen from then on. */
+    static void noteDamaged(Context context, String asideName) {
+        String text = asideName != null
+            ? "The record was damaged and couldn't be read. It was kept as " + asideName + " and a new record started from what the phone holds."
+            : "The record is damaged and couldn't be read or moved aside.";
+        prefs(context).edit().putString("damaged", text).commit();
     }
 
     static SharedPreferences preferences(Context context) {
@@ -208,9 +218,9 @@ final class Sync {
                 prefs(context).edit().remove("crash").apply();
                 return true;
             }
-            Collector collector = new Collector(context, counting);
+            Collector collector = new Collector(context, counting, record.conversations());
             List<Rules.Entry> found = collector.collect();
-            Ledger.Added added = record.add(found);
+            Ledger.Added added = record.add(found, collector.newlyFiled());
             String problem = collector.problem();
             int other = collector.otherCalls();
             int people = 0;

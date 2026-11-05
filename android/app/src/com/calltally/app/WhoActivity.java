@@ -53,6 +53,9 @@ public class WhoActivity extends Screen {
     private Button tickAll;
     private Adapter adapter;
     private boolean changed;
+    private boolean saving;
+    private String saveProblem;
+    private final java.util.concurrent.ExecutorService writes = java.util.concurrent.Executors.newSingleThreadExecutor();
     private int gap;
 
     @Override
@@ -68,6 +71,7 @@ public class WhoActivity extends Screen {
         note.setText("Reading your contacts…");
         note.setPadding(0, gap / 4, 0, gap / 2);
         search = new EditText(this);
+        search.setId(R.id.who_search);
         search.setHint("Search by name or number");
         search.setTextColor(txt);
         search.setHintTextColor(muted);
@@ -128,6 +132,9 @@ public class WhoActivity extends Screen {
                     people = record.people();
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    problem = Record.UNREADABLE;
+                    people = null;
                 }
                 final List<Line> lines = people == null ? new ArrayList<Line>() : lines(phone, people);
                 final String text = problem;
@@ -136,7 +143,10 @@ public class WhoActivity extends Screen {
                     public void run() {
                         all.clear();
                         all.addAll(lines);
-                        note.setText(text != null ? text : "Only ticked people count. Their calls and texts stay counted"
+                        if (text == null && saveProblem != null) {
+                            note.setText(saveProblem);
+                            saveProblem = null;
+                        } else note.setText(text != null ? text : "Only ticked people count. Their calls and texts stay counted"
                             + " even if they leave your contacts.");
                         filter();
                     }
@@ -159,7 +169,7 @@ public class WhoActivity extends Screen {
             }
         }
         for (Rules.Person person : people) {
-            if (!onPhone.containsKey(person.key)) out.add(new Line(person.key, person.label(), person.numbers, null, true));
+            if (!onPhone.containsKey(person.key)) out.add(new Line(person.key, person.label(), person.numbers, null, person.ticked));
         }
         Collections.sort(out, new Comparator<Line>() {
             @Override
@@ -172,52 +182,102 @@ public class WhoActivity extends Screen {
     }
 
     private void filter() {
-        String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-        String digits = query.replaceAll("\\D", "");
+        String query = search.getText().toString().trim();
+        String digits = Rules.searchDigits(query);
+        String words = query.toLowerCase(Locale.ROOT);
         shown.clear();
         for (Line line : all) {
-            if (query.isEmpty() || line.name.toLowerCase(Locale.ROOT).contains(query) || matchesNumber(line, digits)) shown.add(line);
+            // Text made only of digits and phone punctuation looks up numbers; anything else looks up names.
+            boolean match = query.isEmpty() || (digits != null ? matchesNumber(line, digits) : line.name.toLowerCase(Locale.ROOT).contains(words));
+            if (match) shown.add(line);
         }
         boolean any = false;
         for (Line line : shown) if (!line.ticked) any = true;
-        enable(tickAll, any);
+        enable(tickAll, any && !saving);
         adapter.notifyDataSetChanged();
     }
 
     private static boolean matchesNumber(Line line, String digits) {
-        if (digits.isEmpty()) return false;
         for (String number : line.numbers) if (number.replaceAll("\\D", "").contains(digits)) return true;
         return false;
     }
 
-    private void set(Line line, boolean ticked) {
-        try {
-            Record record = Record.get(this);
-            if (ticked && line.contact != null) record.tick(Collections.singletonList(line.contact));
-            else record.setTicked(line.key, ticked);
-            line.ticked = ticked;
-            changed = true;
-        } catch (Record.TooNew error) {
-            note.setText(error.getMessage());
-        }
+    /** Ticks or unticks one person, writing the record away from the screen. */
+    private void set(final Line line, final boolean ticked) {
+        line.ticked = ticked;
+        changed = true;
         filter();
+        final Context context = getApplicationContext();
+        save(new Runnable() {
+            @Override
+            public void run() {
+                Record record = Record.get(context);
+                if (ticked && line.contact != null) record.tick(Collections.singletonList(line.contact));
+                else record.setTicked(line.key, ticked);
+            }
+        });
     }
 
     private void tickAllShown() {
-        List<Rules.Person> contacts = new ArrayList<>();
-        for (Line line : shown) if (!line.ticked && line.contact != null) contacts.add(line.contact);
-        try {
-            Record record = Record.get(this);
-            record.tick(contacts);
-            for (Line line : shown) {
-                if (!line.ticked && line.contact == null) record.setTicked(line.key, true);
-                line.ticked = true;
-            }
-            changed = true;
-        } catch (Record.TooNew error) {
-            note.setText(error.getMessage());
+        final List<Rules.Person> contacts = new ArrayList<>();
+        final List<String> gone = new ArrayList<>();
+        for (Line line : shown) {
+            if (line.ticked) continue;
+            if (line.contact != null) contacts.add(line.contact);
+            else gone.add(line.key);
+            line.ticked = true;
         }
+        changed = true;
         filter();
+        final Context context = getApplicationContext();
+        save(new Runnable() {
+            @Override
+            public void run() {
+                Record record = Record.get(context);
+                record.tick(contacts);
+                for (String key : gone) record.setTicked(key, true);
+            }
+        });
+    }
+
+    /** One write at a time, in order, off the screen. A failed write reloads the list from the record and says so. */
+    private void save(final Runnable write) {
+        saving = true;
+        enable(tickAll, false);
+        writes.execute(new Runnable() {
+            @Override
+            public void run() {
+                String problem = null;
+                try {
+                    write.run();
+                } catch (Record.TooNew error) {
+                    problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    problem = "That did not save.";
+                }
+                final String trouble = problem;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        saving = false;
+                        if (isDestroyed()) return;
+                        if (trouble != null) {
+                            saveProblem = trouble;
+                            load();
+                        } else {
+                            filter();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Writes already queued still finish.
+        writes.shutdown();
     }
 
     @Override
@@ -227,12 +287,13 @@ public class WhoActivity extends Screen {
         if (!changed) return;
         changed = false;
         final Context context = getApplicationContext();
-        new Thread(new Runnable() {
+        // After the ticks are written: the writer runs one task at a time, in order.
+        writes.execute(new Runnable() {
             @Override
             public void run() {
                 Sync.run(context);
             }
-        }).start();
+        });
     }
 
     private final class Adapter extends BaseAdapter {

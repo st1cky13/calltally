@@ -124,6 +124,8 @@ public class DayActivity extends Screen {
                     hidden = "1".equals(record.setting("hide_ignored"));
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    problem = Record.UNREADABLE;
                 }
                 final List<Record.Item> found = got;
                 final Record.DayTotals sums = totals;

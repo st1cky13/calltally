@@ -64,6 +64,8 @@ public class ContactsActivity extends Screen {
                     totals = from == null ? record.totals() : record.totals(from, to);
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    problem = Record.UNREADABLE;
                 }
                 final List<Record.Totals> found = list;
                 final Record.Totals sums = totals;

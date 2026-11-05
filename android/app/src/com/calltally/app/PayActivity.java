@@ -159,6 +159,8 @@ public class PayActivity extends Screen {
                     first = record.earliest();
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    problem = Record.UNREADABLE;
                 }
                 final String s = startText, d = length, e = first, trouble = problem;
                 runOnUiThread(new Runnable() {

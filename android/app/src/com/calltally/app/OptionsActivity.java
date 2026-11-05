@@ -211,6 +211,8 @@ public class OptionsActivity extends Screen {
                     hidden = "1".equals(record.setting("hide_ignored"));
                 } catch (Record.TooNew error) {
                     who = pay = problem = error.getMessage();
+                } catch (RuntimeException error) {
+                    who = pay = problem = Record.UNREADABLE;
                 }
                 final String whoText = who, payText = pay, trouble = problem;
                 final boolean hideIt = hidden, set = havePeriod;
@@ -233,19 +235,31 @@ public class OptionsActivity extends Screen {
 
     private final CompoundButton.OnCheckedChangeListener hideChanged = new CompoundButton.OnCheckedChangeListener() {
         @Override
-        public void onCheckedChanged(CompoundButton button, boolean checked) {
-            Record.get(OptionsActivity.this).setSetting("hide_ignored", checked ? "1" : "0");
+        public void onCheckedChanged(CompoundButton button, final boolean checked) {
+            final Context context = getApplicationContext();
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Record.get(context).setSetting("hide_ignored", checked ? "1" : "0");
+                    } catch (RuntimeException error) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                // Shows what the record really holds.
+                                if (!isDestroyed()) load();
+                            }
+                        });
+                    }
+                }
+            }).start();
         }
     };
 
     /** Saves the look and redraws this screen in it at once; the others follow when they show again. */
     private void look(String mode, String theme) {
         if (mode.equals(mode()) && theme.equals(theme())) return;
-        try {
-            setLook(this, mode, theme);
-        } catch (Record.TooNew error) {
-            return;
-        }
+        setLook(this, mode, theme);
         redraw();
     }
 

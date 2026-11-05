@@ -33,6 +33,7 @@ abstract class Screen extends Activity {
     static final String[] MODES = {"system", "light", "dark"};
 
     private static String mode;
+    private static boolean copyMissing;
     private static String theme;
     private String applied;
 
@@ -44,19 +45,22 @@ abstract class Screen extends Activity {
     View body;
     LinearLayout footer;
 
-    /** Reads the look from the record's settings once per process. A record that can't be read gives the default. */
+    /**
+     * Reads the look once per process from a small copy kept beside the record, so the first screen never waits on the
+     * database. The record's settings hold the same two values; when there is no copy yet, the month screen makes one
+     * from the record.
+     */
     static synchronized void loadLook(Context context) {
         if (mode != null) return;
-        mode = "system";
-        theme = "teal";
-        try {
-            Record record = Record.get(context);
-            String m = record.setting("look_mode"), t = record.setting("look_theme");
-            for (String known : MODES) if (known.equals(m)) mode = known;
-            for (String known : THEMES) if (known.equals(t)) theme = known;
-        } catch (RuntimeException error) {
-            // The default look; the month screen says what is wrong with the record.
-        }
+        android.content.SharedPreferences copy = context.getSharedPreferences("look", Context.MODE_PRIVATE);
+        copyMissing = !copy.contains("mode");
+        mode = known(MODES, copy.getString("mode", null), "system");
+        theme = known(THEMES, copy.getString("theme", null), "teal");
+    }
+
+    private static String known(String[] names, String value, String fallback) {
+        for (String name : names) if (name.equals(value)) return name;
+        return fallback;
     }
 
     static synchronized String mode() {
@@ -67,13 +71,41 @@ abstract class Screen extends Activity {
         return theme;
     }
 
-    /** Saves a new look. Screens redraw themselves when they next show. */
-    static synchronized void setLook(Context context, String newMode, String newTheme) {
-        Record record = Record.get(context);
-        record.setSetting("look_mode", newMode);
-        record.setSetting("look_theme", newTheme);
-        mode = newMode;
-        theme = newTheme;
+    /** Takes a new look at once for every screen, then saves it to the record away from the screen. */
+    static void setLook(Context context, String newMode, String newTheme) {
+        final Context app = context.getApplicationContext();
+        final String m = known(MODES, newMode, "system"), t = known(THEMES, newTheme, "teal");
+        adopt(app, m, t);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Record record = Record.get(app);
+                    record.setSetting("look_mode", m);
+                    record.setSetting("look_theme", t);
+                } catch (RuntimeException error) {
+                    // The copy keeps the look for now; the record is written the next time the look changes.
+                }
+            }
+        }).start();
+    }
+
+    /** The record's look, taken only when there was no copy yet, so a look just chosen is never undone. True on a change. */
+    static synchronized boolean adoptMissing(Context context, String newMode, String newTheme) {
+        if (!copyMissing) return false;
+        copyMissing = false;
+        return adopt(context, newMode, newTheme);
+    }
+
+    /** Uses this look from now on and keeps it in the copy. Returns true when it is a change. */
+    static synchronized boolean adopt(Context context, String newMode, String newTheme) {
+        copyMissing = false;
+        String m = known(MODES, newMode, "system"), t = known(THEMES, newTheme, "teal");
+        boolean changed = !m.equals(mode) || !t.equals(theme);
+        mode = m;
+        theme = t;
+        context.getSharedPreferences("look", Context.MODE_PRIVATE).edit().putString("mode", m).putString("theme", t).apply();
+        return changed;
     }
 
     private static synchronized String look() {

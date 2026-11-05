@@ -485,6 +485,33 @@ class AndroidRulesTests(ServerCase):
         self.assertEqual(rules["pay-describe"], "Pay periods start Sun Oct 25 and run two weeks | Pay periods start Sun Jan 3, 2027 and run one week")
         self.assertEqual(rules["pay-bad"], "null null null null")
 
+    def test_conversations_keep_their_first_filing(self):
+        rules = self.run_rules()
+        chat = rules["filing-chat"].split(" ; ")
+        # Dana's chat stays her chat, under the same id, when Mom is ticked too or instead; with nobody ticked it counts nothing.
+        self.assertEqual(chat[:4], ["Dana-Work | 5551234567"] * 3 + ["personal"])
+        self.assertEqual(chat[4], "Group: Dana-Work, Mom | thread-7")
+        self.assertEqual(chat[5], "same-id true")
+        self.assertEqual(rules["filing-group"], "Group: Dana-Work, Mom | thread-8 ; Group: Dana-Work +1 | thread-8")
+        self.assertEqual(rules["filing-decided"], "1 0")
+
+    def test_contact_with_a_new_key_keeps_its_person(self):
+        self.assertEqual(self.run_rules()["moved"], "{old-dana=new-dana} {} {}")
+
+    def test_search_looks_up_numbers_only_for_digits(self):
+        self.assertEqual(self.run_rules()["search"].split(" | "),
+                         ["null", "555", "5551234567", "1555123", "null", "9", "null", "null", "null", "null"])
+
+    def test_record_keeps_conversation_filings(self):
+        rules = self.run_rules()
+        app = sqlite3.connect(Path(self.temp) / "app2.db")
+        try:
+            for statement in json.loads(rules["sql-schema"]):
+                app.execute(statement)
+            self.assertEqual([r[1] for r in app.execute("PRAGMA table_info(conversations)")], ["thread", "number", "contact"])
+        finally:
+            app.close()
+
     def test_screen_words(self):
         rules = self.run_rules()
         self.assertEqual(rules["words-clock"], "17:06 1:08:17 0:59 0:00 10:00:00")

@@ -24,6 +24,7 @@ final class Collector {
 
     private final ContentResolver resolver;
     private final Map<String, String> workNames;
+    private final Map<Long, Rules.Who> filed;
     private final Map<Long, List<String>> threadPeople = new HashMap<>();
     private Rules.Texts texts;
     private boolean conversationList = true;
@@ -31,10 +32,14 @@ final class Collector {
     private String textsProblem;
     private int otherCalls;
 
-    /** workNames: the numbers that count, by their last ten digits, with the name each counts under. */
-    Collector(Context context, Map<String, String> workNames) {
+    /**
+     * workNames: the numbers that count, by their last ten digits, with the name each counts under. filed: how earlier
+     * runs filed each conversation of more than one person.
+     */
+    Collector(Context context, Map<String, String> workNames, Map<Long, Rules.Who> filed) {
         resolver = context.getContentResolver();
         this.workNames = workNames;
+        this.filed = filed;
     }
 
     static final class Problem extends RuntimeException {
@@ -77,7 +82,7 @@ final class Collector {
             List<Rules.Entry> found = new ArrayList<>();
             readThreads();
             threadPeople.putAll(peopleFromMessages());
-            texts = new Rules.Texts(workNames, threadPeople);
+            texts = new Rules.Texts(workNames, threadPeople, filed);
             int messages = readSms(found) + readMms(found);
             // A phone that suddenly shows no messages is having a problem. Saying so keeps the screen from looking healthy.
             if (messages == 0) throw new Problem("Android returned no messages.");
@@ -115,6 +120,11 @@ final class Collector {
 
     int groups() {
         return texts == null ? 0 : texts.groups();
+    }
+
+    /** Conversations of more than one person filed for the first time in this run, for the record to remember. */
+    Map<Long, Rules.Who> newlyFiled() {
+        return texts == null ? new HashMap<Long, Rules.Who>() : texts.decided();
     }
 
     /**

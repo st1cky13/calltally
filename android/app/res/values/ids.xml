@@ -35,6 +35,7 @@
     <item type="id" name="pay_change" />
     <item type="id" name="who_line" />
     <item type="id" name="who_open" />
+    <item type="id" name="who_search" />
     <item type="id" name="hide_ignored" />
     <item type="id" name="mode_system" />
     <item type="id" name="mode_light" />

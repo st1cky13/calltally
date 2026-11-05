@@ -34,6 +34,62 @@ public class RulesCheck {
         statements();
         payPeriods();
         words();
+        filing();
+        moved();
+        search();
+    }
+
+    /**
+     * A conversation keeps the way it was first filed when ticks change: a chat with Dana stays her chat after Mom is
+     * ticked too, a group stays a group after one of its two ticked people is unticked, and with nobody ticked it counts
+     * nothing. Prints each step's contact | number.
+     */
+    private static void filing() {
+        List<String> pair = Arrays.asList("5551234567", "5559998888");
+        Map<String, String> dana = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567")));
+        Map<String, String> both = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567"),
+            person("m", "Mom", true, true, "5559998888")));
+        Map<String, String> mom = Rules.countingNumbers(Arrays.asList(person("m", "Mom", true, true, "5559998888")));
+        Map<String, String> nobody = new HashMap<>();
+        // First run: Dana alone is ticked, so the pair is her chat; the record remembers that.
+        Rules.Texts first = new Rules.Texts(dana, Collections.singletonMap(7L, pair), new HashMap<Long, Rules.Who>());
+        Rules.Entry one = first.sms(7, "5551234567", 1793000000000L, 1).entry;
+        Map<Long, Rules.Who> filed = new HashMap<>(first.decided());
+        // Later runs with other ticks, and the old rule with no memory, for comparison.
+        Rules.Entry withBoth = new Rules.Texts(both, Collections.singletonMap(7L, pair), filed).sms(7, "5551234567", 1793000000000L, 1).entry;
+        Rules.Entry onlyMom = new Rules.Texts(mom, Collections.singletonMap(7L, pair), filed).sms(7, "5559998888", 1793000060000L, 1).entry;
+        Rules.Decision none = new Rules.Texts(nobody, Collections.singletonMap(7L, pair), filed).sms(7, "5551234567", 1793000000000L, 1);
+        Rules.Entry unremembered = new Rules.Texts(both, Collections.singletonMap(7L, pair), new HashMap<Long, Rules.Who>()).sms(7, "5551234567", 1793000000000L, 1).entry;
+        System.out.println("filing-chat " + one.contact + " | " + one.number + " ; " + withBoth.contact + " | " + withBoth.number
+            + " ; " + onlyMom.contact + " | " + onlyMom.number + " ; " + none.skipped + " ; " + unremembered.contact + " | " + unremembered.number
+            + " ; same-id " + Ledger.entryId(one.kind, one.number, one.epoch, one.direction).equals(
+                Ledger.entryId(withBoth.kind, withBoth.number, withBoth.epoch, withBoth.direction)));
+        // A group first filed with both ticked stays the group with Dana alone ticked.
+        Rules.Texts group = new Rules.Texts(both, Collections.singletonMap(8L, pair), new HashMap<Long, Rules.Who>());
+        Rules.Entry g1 = group.sms(8, "5551234567", 1793000000000L, 1).entry;
+        Rules.Entry g2 = new Rules.Texts(dana, Collections.singletonMap(8L, pair), new HashMap<>(group.decided())).sms(8, "5551234567", 1793000000000L, 1).entry;
+        System.out.println("filing-group " + g1.contact + " | " + g1.number + " ; " + g2.contact + " | " + g2.number);
+        // Only first filings are handed back to be remembered.
+        System.out.println("filing-decided " + first.decided().size() + " " + new Rules.Texts(both, Collections.singletonMap(7L, pair), filed).decided().size());
+    }
+
+    /** A contact given a new key by Android keeps its person; a new contact with an unrelated number does not. */
+    private static void moved() {
+        List<Rules.Person> known = Arrays.asList(person("old-dana", "Dana-Work", true, false, "+1 (555) 123-4567"),
+            person("sam", "Sam - Work", true, true, "5552223333"), person("gone", "Gone-Work", false, false, "5554445555"));
+        List<Rules.Person> phone = Arrays.asList(person("new-dana", "Dana-Work", false, true, "555-123-4567", "5550001111"),
+            person("sam", "Sam - Work", false, true, "5552223333"), person("stranger", "Stranger", false, true, "5556667777"),
+            person("also-sam", "Sam work", false, true, "5552223333"));
+        System.out.println("moved " + new TreeMap<>(Rules.movedKeys(known, phone)) + " " + Rules.movedKeys(known, null) + " "
+            + Rules.movedKeys(known, new ArrayList<Rules.Person>()));
+    }
+
+    private static void search() {
+        StringBuilder out = new StringBuilder();
+        for (String query : new String[] {"zz9", "555", "(555) 123-4567", "+1 555.123", "Dana", "9", "", "  ", "-", "Sam 2"}) {
+            out.append(out.length() > 0 ? " | " : "").append(Rules.searchDigits(query));
+        }
+        System.out.println("search " + out);
     }
 
     /**

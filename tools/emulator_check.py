@@ -4,10 +4,11 @@
 Starts the emulator, builds and installs a test copy of the app (CALLTALLY_DEBUG=true: debuggable, with the test hook),
 seeds contacts, calls and messages, ticks Dana-Work and Sam - Work through the test hook, runs the app and copies its record
 off the emulator to check it with sqlite3 against what calltally.py would have kept. Then it unticks Dana, ticks her again
-and deletes her contact, checking that nothing is ever lost, and takes the app's permissions away. Last it opens the month
-screen and reads it with uiautomator: the title, the three totals rows and the grid, counted as calltally.py counts the
-record, with every button at least 40dp tall. Prints one pass or fail line per check, exits 1 on any fail, and always
-stops the emulator and adb.
+and deletes her contact, checking that nothing is ever lost, ticks Mom to check that conversations keep their identity,
+and takes the app's permissions away. Last it opens the month screen and reads it with uiautomator: the title, the three
+totals rows and the grid, counted as calltally.py counts the record, with every button at least 40dp tall; then Who
+counts with its ticks and search; then a damaged record, which must be moved aside. Prints one pass or fail line per
+check, exits 1 on any fail, and always stops the emulator and adb.
 
 Usage: python3 tools/emulator_check.py [--out FOLDER]   (default: a new folder under $TMPDIR)
 Needs the Android tools in ~/local/calltally-build (see android/app/build.sh) and the AVD "ct". Takes a few minutes.
@@ -486,6 +487,31 @@ def main():
             group = [r for r in latest if r["number"] == f"thread-{groups['group']}"]
             check("the group keeps its label without her contact", len(group) == 1 and group[0]["contact"] == "Group: Dana-Work +2", str(group))
 
+        # Run 3b: Mom ticked as well. The conversations already filed keep their identity: the chat of Dana and Mom stays
+        # Dana's chat and the group stays the same group under a new label, so none of their texts come in twice.
+        answer = run.tick([MOM])
+        check("Mom ticked through the test hook", answer == "ticked 1", answer)
+        if not check("app ran with Mom ticked", run.run_app(run.device_mark())):
+            raise RuntimeError("no run finished")
+        with_mom = rows(run.record())
+        # Only a group's label may change, since its people's names are in it.
+        def unlabelled(found):
+            return [{k: v for k, v in r.items() if k != "contact" or not r["number"].startswith("thread-")} for r in found]
+        check("every earlier row is intact after ticking Mom", all(r in unlabelled(with_mom) for r in unlabelled(latest)),
+              str([r for r in unlabelled(latest) if r not in unlabelled(with_mom)][:2]))
+        if "pair" in groups:
+            pair = [r for r in with_mom if r["epoch"] == T + 2100]
+            check("the chat of Dana and Mom stays Dana's chat, once", len(pair) == 1 and pair[0]["number"] == DANA1
+                  and pair[0]["contact"] == "Dana-Work", str(pair))
+        if "group" in groups:
+            group = [r for r in with_mom if r["epoch"] == T + 2000]
+            check("the group stays one group, now labelled with Mom", len(group) == 1
+                  and group[0]["number"] == f"thread-{groups['group']}" and group[0]["contact"] == "Group: Dana-Work, Mom +1", str(group))
+        latest = with_mom
+        # Dana unticked while her contact is gone, for Who counts to show further on.
+        answer = run.tick([DANA1], untick=True)
+        check("Dana unticked again through the test hook", answer == "unticked 1", answer)
+
         # Run 4: texts refused. The app needs all three permissions, so it reads nothing and says so.
         run.sh("pm", "revoke", APP, "android.permission.READ_SMS")
         reported = run.run_app(run.device_mark())
@@ -555,6 +581,44 @@ def main():
         cells = [n.get("content-desc") for n in by_id(nodes, "day_cell")]
         check("the seeded month's total and its busy day match calltally.py", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
+
+        # Who counts: Dana, unticked and no longer on the phone, shows unticked; a search with letters looks up names only.
+        run.sh("input", "keyevent", "KEYCODE_BACK")
+        time.sleep(1)
+        run.sh("am", "force-stop", APP)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "gear")), 30)
+        run.tap(by_id(nodes, "gear")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "who_open")), 30)
+        run.tap(by_id(nodes, "who_open")[0])
+
+        def boxes(ns):
+            return {n.get("text"): n.get("checked") for n in ns if n.get("class", "").endswith("CheckBox") and n.get("package") == APP}
+        nodes = run.wait_for(lambda ns: "Dana-Work" in boxes(ns), 30)
+        shown = boxes(nodes)
+        check("Who counts shows Dana unticked though she is no longer on the phone",
+              shown.get("Dana-Work") == "false" and shown.get("Sam - Work") == "true" and shown.get("Mom") == "true", str(shown))
+        run.tap(by_id(nodes, "who_search")[0])
+        run.sh("input", "text", "zz9")
+        letters = boxes(run.wait_for(lambda ns: "Mom" not in boxes(ns), 15))
+        run.sh("input", "keyevent", "KEYCODE_MOVE_END", "KEYCODE_DEL", "KEYCODE_DEL", "KEYCODE_DEL")
+        run.sh("input", "text", "999")
+        digits = boxes(run.wait_for(lambda ns: list(boxes(ns)) == ["Mom"], 15))
+        check("Who counts' search: zz9 finds nobody, 999 finds Mom by her number", letters == {} and list(digits) == ["Mom"],
+              f"zz9 {letters} 999 {digits}")
+
+        # A damaged record is moved aside, never deleted, and the month screen says so.
+        run.sh("am", "force-stop", APP)
+        base = f"/data/data/{APP}/databases/{DATABASE}"
+        size = int(run.adb("shell", "stat", "-c", "%s", base).strip())
+        run.adb("shell", f"dd if=/dev/zero of={base} bs=100 count=1 conv=notrunc")
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: "damaged" in (text_of(ns, "problem") or ""), 40)
+        listing = run.adb("shell", "ls", "-l", f"/data/data/{APP}/databases/")
+        aside = [line for line in listing.splitlines() if ".damaged-" in line and not line.rstrip().endswith(("-journal", "-wal", "-shm"))]
+        check("a damaged record is kept under a new name and the month screen says so",
+              len(aside) == 1 and str(size) in aside[0].split() and "kept as calltally.db.damaged-" in (text_of(nodes, "problem") or ""),
+              f"{listing.strip()[:300]} | {text_of(nodes, 'problem')!r}")
     except Exception as error:  # noqa: BLE001 - every failure is reported as a fail line, then everything stops
         check("the check ran to the end", False, f"{type(error).__name__}: {error}")
     finally:
