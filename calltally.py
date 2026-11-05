@@ -244,12 +244,13 @@ class Store:
 
     def contacts(self, start=None, end=None):
         # Grouped by name: a repeat upload refreshes old rows to the current name, so a renamed contact stays one line.
+        # A contact with nothing that counts, only deleted entries or unanswered calls, is left out.
         where, args = self.span(start, end)
         conn = self.connect()
         try:
             rows = conn.execute(
                 f"SELECT contact, {TOTALS} FROM entries WHERE deleted_at IS NULL{where} GROUP BY contact "
-                "ORDER BY call_s DESC, texts DESC, contact",
+                "HAVING calls>0 OR texts>0 ORDER BY call_s DESC, texts DESC, contact",
                 args,
             ).fetchall()
         finally:
@@ -268,7 +269,7 @@ class Store:
 
     def set_settings(self, payload):
         start = payload.get("pay_period_start")
-        if not is_real_day(start):
+        if not is_real_day(start) or not "2000-01-01" <= start <= "2100-12-31":
             raise BadRequest("bad date")
         conn = self.connect()
         try:

@@ -293,6 +293,14 @@ class TotalsTests(ServerCase):
         rows = self.get("/api/contacts")["contacts"]
         self.assertEqual([r["contact"] for r in rows], ["Cat-Work", "Ann-Work", "Bee-Work"])
 
+    def test_contact_with_only_unanswered_calls_is_left_out(self):
+        self.post("/api/upload", {"entries": [
+            entry(),
+            entry(epoch=1793000100, contact="Missed-Work", number="5556667777", direction="missed", duration_s=12),
+            entry(epoch=1793000200, contact="Missed-Work", number="5556667777", direction="out", duration_s=0),
+        ]})
+        self.assertEqual([r["contact"] for r in self.get("/api/contacts")["contacts"]], ["Dana-Work"])
+
     def test_renamed_contact_is_one_line(self):
         self.post("/api/upload", {"entries": [entry(), entry(epoch=1793000100, at="2026-11-04 09:01:40", duration_s=30)]})
         self.post("/api/upload", {"entries": [entry(contact="Dana New-Work"),
@@ -319,12 +327,16 @@ class SettingsTests(ServerCase):
         again = calltally.Store(Path(self.temp) / "t.db")
         self.assertEqual(again.settings(), reply)
 
+    def test_edge_years_allowed(self):
+        for good in ("2000-01-01", "2100-12-31"):
+            self.assertEqual(self.post("/api/settings", {"pay_period_start": good})[1]["pay_period_start"], good)
+
     def test_days_cannot_be_changed(self):
         status, reply = self.post("/api/settings", {"pay_period_start": "2026-11-01", "pay_period_days": 7})
         self.assertEqual((status, reply["pay_period_days"]), (200, 14))
 
     def test_bad_date_refused(self):
-        for bad in ("2026-02-30", "11/01/2026", "", None, 20261101):
+        for bad in ("2026-02-30", "11/01/2026", "", None, 20261101, "0001-01-01", "1999-12-31", "2101-01-01"):
             status, _ = self.post("/api/settings", {"pay_period_start": bad})
             self.assertEqual(status, 400, bad)
         self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
