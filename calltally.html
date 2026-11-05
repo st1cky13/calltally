@@ -33,34 +33,37 @@
   .nav{display:flex;align-items:center;gap:8px}
   .nav h2{margin:0;flex:1;text-align:center;font-size:17px}
   .nav .btn{width:44px;height:44px;padding:0;font-size:18px;font-weight:700}
-  .totals{display:grid;gap:6px;margin:8px 0 12px}
+  .totals{display:grid;gap:5px;margin:8px 0 8px}
+  .totals.after{margin:8px 0 0}
   .total{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--tint);border:1px solid var(--line2);border-radius:8px;
-    padding:6px 10px;min-height:44px;width:100%;min-width:0;cursor:pointer;display:flex;flex-direction:column;justify-content:center}
+    padding:3px 10px;min-height:42px;width:100%;min-width:0;cursor:pointer;display:flex;flex-direction:column;justify-content:center;line-height:1.25}
   .total:hover{border-color:var(--accent)}
-  .total .lbl{font-size:13px;color:var(--muted)}
-  .total .val{color:var(--muted);font-variant-numeric:tabular-nums}
-  .total .val b{color:var(--txt);font-size:17px;white-space:nowrap}
+  .total .lbl{font-size:12px;color:var(--muted)}
+  .total .val{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  .total .val b{color:var(--txt);font-size:15px;white-space:nowrap}
   .total .val span{white-space:nowrap}
   .period{display:flex;gap:6px;align-items:stretch}
-  .period .btn{width:40px;min-height:44px;padding:0;font-size:16px;font-weight:700;flex:none}
-  .note{margin:2px 0 0;color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .period .btn{width:40px;min-height:42px;padding:0;font-size:16px;font-weight:700;flex:none}
+  .note{margin:0;color:var(--muted);font-size:11.5px;line-height:1.3;display:flex;align-items:center;justify-content:space-between;gap:4px}
+  .note .btn{font-size:12px;min-height:40px;padding:2px 8px;flex:none}
+  @media (min-width:640px){.note{font-size:12px}}
   .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
   .grid{grid-auto-rows:1fr}
-  .week{margin-bottom:4px;color:var(--muted);font-size:12px;text-align:center}
+  .week{margin-bottom:3px;color:var(--muted);font-size:11px;text-align:center}
   .day{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--card2);border:1px solid transparent;border-radius:8px;
-    min-height:68px;padding:4px;display:flex;flex-direction:column;gap:1px;min-width:0;overflow:hidden}
-  .day .n{font-size:12px;color:var(--muted)}
+    min-height:54px;padding:3px;display:flex;flex-direction:column;gap:0;min-width:0;overflow:hidden;line-height:1.2}
+  .day .n{font-size:11px;color:var(--muted)}
   .day .t{font:600 12px/1.2 var(--body);font-variant-numeric:tabular-nums;white-space:nowrap}
   .day .t .wide{display:none}
   .day .x{font-size:11px;line-height:1.2;color:var(--muted)}
   .day.filled{background:var(--tint);border-color:var(--line2);cursor:pointer}
   .day.filled:hover{border-color:var(--accent)}
   .day:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-  .day.today{border-color:var(--accent);border-width:2px;padding:3px}
+  .day.today{border-color:var(--accent);border-width:2px;padding:2px}
   .day.today .n{color:var(--accent);font-weight:700}
   .day.future{opacity:.45}
-  .gap{min-height:68px}
-  @media (min-width:640px){.day,.gap{min-height:84px}.day{padding:7px}.day.today{padding:6px}.day .n{font-size:13px}.day .t{font-size:14px}.day .x{font-size:13px}}
+  .gap{min-height:54px}
+  @media (min-width:640px){.day,.gap{min-height:68px}.day{padding:6px;gap:1px}.day.today{padding:5px}.day .n{font-size:12px}.day .t{font-size:13px}.day .x{font-size:12px}}
   @media (min-width:800px){.day .t .wide{display:inline}.day .t .narrow{display:none}}
   @media (max-width:639px){.day.long{padding-left:2px;padding-right:2px}.day.today.long{padding-left:1px;padding-right:1px}
     .day.long .t{font-size:11px;letter-spacing:-.02em}.day.longer .t{font-size:9.5px}}
@@ -68,7 +71,11 @@
     width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 32px)}
   dialog::backdrop{background:var(--scrim)}
   .head{position:sticky;top:0;z-index:1;background:var(--card);border-bottom:1px solid var(--line);padding:12px 14px;display:flex;align-items:flex-start;gap:10px}
+  .head > div{flex:1;min-width:0}
   .head h2{margin:0;font-size:16px}
+  .tabs{display:flex;gap:6px;margin-top:8px}
+  .tabs .btn{flex:1;min-height:40px}
+  .tabs .btn[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
   .head p{margin:2px 0 0;color:var(--muted);font-size:14px}
   .btn{font:inherit;font-size:14px;color:var(--txt);background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;min-height:36px;cursor:pointer;white-space:nowrap}
   .btn:disabled{opacity:.55;cursor:default}
@@ -114,18 +121,25 @@
         <button class="total" id="tPeriod" type="button"><span class="lbl"></span><span class="val"></span></button>
         <button class="btn" id="pNext" type="button" aria-label="Next pay period">&gt;</button>
       </div>
-      <button class="total" id="tAll" type="button"><span class="lbl">All time</span><span class="val"></span></button>
       <p class="note"><span id="periodNote"></span><button class="btn" id="change" type="button" hidden>Change</button></p>
     </div>
     <div class="week" id="week"></div>
     <div class="grid" id="grid"></div>
+    <div class="totals after">
+      <button class="total" id="tAll" type="button"><span class="lbl">All time</span><span class="val"></span></button>
+    </div>
   </section>
 </main>
 <dialog id="sheet" aria-labelledby="sheetTitle">
   <div class="head">
-    <div><h2 id="sheetTitle"></h2><p id="sheetTotals"></p></div>
+    <div><h2 id="sheetTitle"></h2><p id="sheetTotals"></p>
+      <div class="tabs" role="tablist" id="tabs" hidden>
+        <button class="btn" id="tabCalls" type="button" role="tab" aria-controls="rows" aria-selected="true">Calls</button>
+        <button class="btn" id="tabTexts" type="button" role="tab" aria-controls="rows" aria-selected="false">Texts</button>
+      </div>
+    </div>
   </div>
-  <p class="none" id="none" hidden>Nothing on this day.</p>
+  <p class="none" id="none" hidden>Nothing here.</p>
   <ul class="rows" id="rows"></ul>
   <div class="foot"><button class="btn" id="close" type="button">Close</button></div>
 </dialog>
@@ -172,6 +186,9 @@ let thisMonth = {y: opened.getFullYear(), m: opened.getMonth()};
 let view = {...thisMonth};       // the month on screen
 let earliest = null;             // first day with any data
 let openDay = null;
+let dayTab = null;               // the tab chosen in the day sheet, kept while the page is open
+let sheetTab = "call";           // the tab on screen
+let sheetEntries = [];
 let refreshAsked = 0;
 let monthLoaded = false;
 const cells = new Map();
@@ -453,6 +470,8 @@ async function openSheet(key){
   $("sheetTotals").textContent = "";
   $("rows").replaceChildren();
   $("none").hidden = true;
+  $("tabs").hidden = true;
+  sheetTab = null;
   if (!sheet.open) sheet.showModal();
   await drawSheet(key);
 }
@@ -471,9 +490,30 @@ async function drawSheet(key){
   const seconds = calls.reduce((sum, e) => sum + e.duration_s, 0);
   const texts = live.filter(e => e.kind === "text").length;
   $("sheetTotals").textContent = `${fullTime(seconds)} on ${plural(calls.length, "call")} · ${plural(texts, "text")}`;
-  $("none").hidden = data.entries.length > 0;
-  $("rows").replaceChildren(...data.entries.map(entry => drawRow(entry, key)));
+  sheetEntries = data.entries;
+  const has = kind => data.entries.some(e => e.kind === kind);
+  if (!sheetTab){
+    // Opens on the tab last chosen when it has anything, otherwise on Calls if the day has a call, else Texts.
+    sheetTab = dayTab && has(dayTab) ? dayTab : has("call") ? "call" : "text";
+  }
+  $("tabs").hidden = false;
+  showTab(key);
 }
+
+function showTab(key){
+  $("tabCalls").setAttribute("aria-selected", String(sheetTab === "call"));
+  $("tabTexts").setAttribute("aria-selected", String(sheetTab === "text"));
+  const shown = sheetEntries.filter(e => e.kind === sheetTab);
+  $("none").hidden = shown.length > 0;
+  $("rows").replaceChildren(...shown.map(entry => drawRow(entry, key)));
+}
+function pickTab(kind){
+  if (!openDay || $("tabs").hidden) return;
+  dayTab = sheetTab = kind;
+  showTab(openDay);
+}
+$("tabCalls").addEventListener("click", () => pickTab("call"));
+$("tabTexts").addEventListener("click", () => pickTab("text"));
 
 function drawRow(entry, key){
   const row = document.createElement("li");
@@ -653,7 +693,7 @@ $("confirm").addEventListener("click", async () => {
 $("close").addEventListener("click", () => sheet.close());
 $("peopleClose").addEventListener("click", () => people.close());
 for (const dialog of [sheet, people, pick]) dialog.addEventListener("click", event => {if (event.target === dialog) dialog.close();});
-sheet.addEventListener("close", () => {openDay = null;});
+sheet.addEventListener("close", () => {if (!sheet.open) openDay = null;});
 pick.addEventListener("close", () => {chosen = null;});
 
 $("prev").addEventListener("click", () => go(-1));
