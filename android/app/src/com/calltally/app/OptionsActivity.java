@@ -137,17 +137,6 @@ public class OptionsActivity extends Screen {
         }
         // Keeps the second row's buttons the same width as the first's.
         themeRow.addView(new View(this), third(2));
-        Button reset = button("Set to default");
-        reset.setId(R.id.look_default);
-        reset.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                look("system", "teal");
-            }
-        });
-        LinearLayout.LayoutParams resetGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        resetGap.topMargin = dp(8);
-        column.addView(reset, resetGap);
 
         heading("Last run");
         runLine = muted("");
@@ -164,7 +153,9 @@ public class OptionsActivity extends Screen {
                 thread(getApplicationContext());
             }
         });
-        column.addView(runNow, resetGap);
+        LinearLayout.LayoutParams runGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        runGap.topMargin = dp(8);
+        column.addView(runNow, runGap);
 
         heading("Phone check");
         TextView phoneLine = muted("See what the phone hands the app.");

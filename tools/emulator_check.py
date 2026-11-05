@@ -1206,7 +1206,7 @@ def main():
         last = (datetime(year + number // 12, number % 12 + 1, 1) - datetime(year, number, 1)).days
         check("the month screen opens on this month", text_of(nodes, "month_title") == f"{name} {year}", str(text_of(nodes, "month_title")))
         check("the month row shows this month's totals",
-              text_of(nodes, "total_month") == f"{name}\n{row_value(store.totals(f'{month}-01', f'{month}-{last:02d}'))}",
+              text_of(nodes, "total_month") == f"Month\n{row_value(store.totals(f'{month}-01', f'{month}-{last:02d}'))}",
               repr(text_of(nodes, "total_month")))
         start = datetime.strptime("2026-10-25", "%Y-%m-%d")
         today = datetime.strptime(run.adb("shell", "date", "+%Y-%m-%d").strip(), "%Y-%m-%d")
@@ -1223,14 +1223,60 @@ def main():
         small, outside = screen_problems(nodes, density)
         check("every button on the month screen is at least 40dp tall and nothing reaches past the screen",
               not small and not outside, f"small {small[:3]} outside {outside[:3]}")
+        # 0.9.5: >> comes back to this month, and is off while this month is shown.
+        check(">> is there and off on this month", [n.get("enabled") for n in by_id(nodes, "month_now")] == ["false"],
+              str([n.get("enabled") for n in by_id(nodes, "month_now")]))
         # Back to the seeded month: its day shows the call time and texts the reference counts for it.
         seeded = day[:7]
-        for _ in range(24):
-            if text_of(nodes, "month_title") == datetime.strptime(seeded, "%Y-%m").strftime("%B %Y"):
-                break
-            run.tap(by_id(nodes, "month_prev")[0])
-            time.sleep(1)
-            nodes = run.nodes()
+        seeded_title = datetime.strptime(seeded, "%Y-%m").strftime("%B %Y")
+
+        def back_to_seeded(nodes):
+            for _ in range(24):
+                if text_of(nodes, "month_title") == seeded_title:
+                    break
+                run.tap(by_id(nodes, "month_prev")[0])
+                time.sleep(1)
+                nodes = run.nodes()
+            return nodes
+
+        nodes = back_to_seeded(nodes)
+        if seeded != month:
+            check(">> is on away from this month", [n.get("enabled") for n in by_id(nodes, "month_now")] == ["true"],
+                  str([n.get("enabled") for n in by_id(nodes, "month_now")]))
+            run.tap(by_id(nodes, "month_now")[0])
+            nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == f"{name} {year}", 15)
+            check(">> comes back to this month", text_of(nodes, "month_title") == f"{name} {year}", str(text_of(nodes, "month_title")))
+            # Tapping the month's name opens the picker on this year; the seeded month's button lands on it.
+            run.shot("10-month-screen")
+            run.tap(by_id(nodes, "month_title")[0])
+            nodes = run.wait_for(lambda ns: bool(by_id(ns, "pick_year")), 15)
+            run.shot("10b-month-picker")
+            short = seeded_title[:3]
+            picks = {n.get("text"): n for n in by_id(nodes, "month_pick")}
+            check("the picker opens on the shown year with twelve months",
+                  text_of(nodes, "pick_year") == str(year) and len(picks) == 12, f"{text_of(nodes, 'pick_year')} {sorted(picks)}")
+            later = datetime(year + number // 12, number % 12 + 1, 1).strftime("%b")
+            check("the picker has next month off" if number < 12 else "the picker's next year is off",
+                  (picks.get(later) is not None and picks[later].get("enabled") == "false") if number < 12
+                  else [n.get("enabled") for n in by_id(nodes, "pick_next")] == ["false"],
+                  str({k: v.get("enabled") for k, v in picks.items()}))
+            small, outside = screen_problems(nodes, density)
+            check("every button in the picker is at least 40dp tall and nothing reaches past the screen",
+                  not small and not outside, f"small {small[:3]} outside {outside[:3]}")
+            if seeded[:4] != str(year):
+                for _ in range(int(year) - int(seeded[:4])):
+                    run.tap(by_id(nodes, "pick_prev")[0])
+                    time.sleep(1)
+                nodes = run.wait_for(lambda ns: text_of(ns, "pick_year") == seeded[:4], 15)
+                picks = {n.get("text"): n for n in by_id(nodes, "month_pick")}
+            check("the seeded month can be picked", picks.get(short) is not None and picks[short].get("enabled") == "true",
+                  str({k: v.get("enabled") for k, v in picks.items()}))
+            if picks.get(short) is not None:
+                run.tap(picks[short])
+            nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title and not by_id(ns, "pick_year"), 15)
+            check("picking the seeded month shows it", text_of(nodes, "month_title") == seeded_title and not by_id(nodes, "pick_year"),
+                  str(text_of(nodes, "month_title")))
+            nodes = back_to_seeded(nodes)
         following = (datetime.strptime(seeded, "%Y-%m").replace(day=28) + timedelta(days=4)).replace(day=1)
         seeded_totals = store.totals(f"{seeded}-01", (following - timedelta(days=1)).strftime("%Y-%m-%d"))
         nodes = run.wait_for(lambda ns: (text_of(ns, "total_month") or "").endswith(row_value(seeded_totals)), 20)

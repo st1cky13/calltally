@@ -1,9 +1,11 @@
 package com.calltally.app;
 
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,6 +18,7 @@ import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -27,8 +30,8 @@ import java.util.Map;
 
 /**
  * The month screen: the month's call time and texts day by day, the month and pay period totals above the calendar and
- * All time below it. Tapping a day opens it; tapping a total lists it by contact. Also asks for permission and starts the
- * first run. Runs happen without this screen; it redraws when one finishes.
+ * All time below it. Tapping a day opens it; tapping a total lists it by contact; tapping the month's name picks another
+ * month. Also asks for permission and starts the first run. Runs happen without this screen; it redraws when one finishes.
  */
 public class MainActivity extends Screen {
     private static final int ASK = 1;
@@ -53,7 +56,8 @@ public class MainActivity extends Screen {
     private TextView empty;
     private Button prev;
     private Button next;
-    private TextView title;
+    private Button now;
+    private FitText title;
     private Button monthRow;
     private LinearLayout periodLine;
     private Button periodRow;
@@ -63,6 +67,12 @@ public class MainActivity extends Screen {
     private Button allRow;
     private final Map<String, LinearLayout> cells = new java.util.HashMap<>();
     private String permissionText;
+    private Dialog picker;
+    private int pickYear;
+    private TextView pickTitle;
+    private Button pickPrev;
+    private Button pickNext;
+    private final Button[] pickMonths = new Button[12];
 
     private final SharedPreferences.OnSharedPreferenceChangeListener runs = new SharedPreferences.OnSharedPreferenceChangeListener() {
         @Override
@@ -166,12 +176,23 @@ public class MainActivity extends Screen {
         nav.setGravity(Gravity.CENTER_VERTICAL);
         prev = arrow("<", "Previous month", R.id.month_prev);
         next = arrow(">", "Next month", R.id.month_next);
-        title = text("", 17, txt, true);
+        now = arrow(">>", "This month", R.id.month_now);
+        // The month's name shrinks to one line on a narrow phone, and a tap on it picks a month.
+        title = new FitText(this, 17);
+        title.setTextColor(txt);
+        title.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         title.setId(R.id.month_title);
         title.setGravity(Gravity.CENTER);
+        title.setPadding(dp(6), 0, dp(6), 0);
+        title.setMinHeight(dp(48));
+        title.setBackground(touchable(shape(0, 0, 0, 8)));
+        title.setContentDescription("Pick a month");
+        // An empty space as wide as >> keeps the month's name in the middle of the screen.
+        nav.addView(new View(this), new LinearLayout.LayoutParams(dp(48), dp(48)));
         nav.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(48)));
         nav.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         nav.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        nav.addView(now, new LinearLayout.LayoutParams(dp(48), dp(48)));
         monthCard.addView(nav, wide());
         prev.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -183,6 +204,18 @@ public class MainActivity extends Screen {
             @Override
             public void onClick(View v) {
                 go(1);
+            }
+        });
+        now.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                jump(thisMonth);
+            }
+        });
+        title.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pick();
             }
         });
 
@@ -282,7 +315,7 @@ public class MainActivity extends Screen {
         gearSize.leftMargin = dp(4);
         header.addView(gear, gearSize);
 
-        showRow(monthRow, Words.monthName(view.getMonthValue()), null);
+        showRow(monthRow, "Month", null);
         showRow(periodRow, "Pay period", null);
         showRow(allRow, "All time", null);
         drawMonth();
@@ -384,6 +417,13 @@ public class MainActivity extends Screen {
     }
 
     @Override
+    protected void onDestroy() {
+        // An open picker goes with the screen, so Android has no window left behind.
+        if (picker != null) picker.dismiss();
+        super.onDestroy();
+    }
+
+    @Override
     public void onRequestPermissionsResult(int code, String[] names, int[] results) {
         if (code == ASK && Sync.allowed(this)) {
             permissionText = null;
@@ -409,6 +449,12 @@ public class MainActivity extends Screen {
         load();
     }
 
+    private void jump(YearMonth month) {
+        view = month;
+        drawMonth();
+        load();
+    }
+
     private void stepPeriod(int by) {
         if (period == null) return;
         periodK += by;
@@ -426,7 +472,7 @@ public class MainActivity extends Screen {
 
     /** Lays out the month's days, empty until the record answers. */
     private void drawMonth() {
-        title.setText(Words.monthTitle(view.getYear(), view.getMonthValue()));
+        title.show(Words.monthTitle(view.getYear(), view.getMonthValue()));
         grid.removeAllViews();
         cells.clear();
         int lead = view.atDay(1).getDayOfWeek().getValue() % 7;
@@ -519,6 +565,8 @@ public class MainActivity extends Screen {
         YearMonth before = view.minusMonths(1);
         enable(prev, earliest != null && before.atEndOfMonth().toString().compareTo(earliest) >= 0);
         enable(next, view.isBefore(thisMonth));
+        enable(now, !view.equals(thisMonth));
+        enable(title, earliest != null);
         if (period == null) {
             enable(periodPrev, false);
             enable(periodNext, false);
@@ -526,6 +574,131 @@ public class MainActivity extends Screen {
             enable(periodPrev, earliest != null && period.last(periodK - 1).toString().compareTo(earliest) >= 0);
             enable(periodNext, periodK < period.index(today));
         }
+    }
+
+    // The month picker
+
+    /** A month with something to show: not after this month, and not ended before the record's first entry. */
+    private boolean pickable(YearMonth month) {
+        return earliest != null && !month.isAfter(thisMonth) && month.atEndOfMonth().toString().compareTo(earliest) >= 0;
+    }
+
+    private boolean anyPickable(int year) {
+        for (int m = 1; m <= 12; m++) if (pickable(YearMonth.of(year, m))) return true;
+        return false;
+    }
+
+    /** A year with arrows, its twelve months to tap, and Close, drawn in the page's own style. */
+    private void pick() {
+        if (earliest == null || picker != null) return;
+        pickYear = view.getYear();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(shape(card, line, 1, 12));
+        box.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+        LinearLayout top = row();
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        pickPrev = arrow("<", "Previous year", R.id.pick_prev);
+        pickNext = arrow(">", "Next year", R.id.pick_next);
+        pickTitle = text("", 17, txt, true);
+        pickTitle.setId(R.id.pick_year);
+        pickTitle.setGravity(Gravity.CENTER);
+        top.addView(pickPrev, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        top.addView(pickTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        top.addView(pickNext, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        box.addView(top, wide());
+        pickPrev.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickYear--;
+                drawPicker();
+            }
+        });
+        pickNext.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickYear++;
+                drawPicker();
+            }
+        });
+
+        for (int r = 0; r < 4; r++) {
+            LinearLayout months = row();
+            for (int c = 0; c < 3; c++) {
+                final int month = r * 3 + c + 1;
+                String name = Words.monthName(month);
+                Button button = button(name.substring(0, 3));
+                button.setId(R.id.month_pick);
+                button.setContentDescription(name);
+                button.setMinHeight(dp(44));
+                button.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (picker != null) picker.dismiss();
+                        jump(YearMonth.of(pickYear, month));
+                    }
+                });
+                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+                if (c > 0) cell.leftMargin = dp(6);
+                months.addView(button, cell);
+                pickMonths[month - 1] = button;
+            }
+            LinearLayout.LayoutParams gap = wide();
+            gap.topMargin = dp(r == 0 ? 10 : 6);
+            box.addView(months, gap);
+        }
+
+        Button close = button("Close");
+        close.setId(R.id.close);
+        close.setMinHeight(dp(48));
+        close.setMinimumHeight(dp(48));
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (picker != null) picker.dismiss();
+            }
+        });
+        LinearLayout.LayoutParams closeGap = wide();
+        closeGap.topMargin = dp(14);
+        box.addView(close, closeGap);
+
+        picker = new Dialog(this);
+        picker.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        picker.setContentView(box);
+        picker.setCanceledOnTouchOutside(true);
+        picker.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(android.content.DialogInterface dialog) {
+                picker = null;
+            }
+        });
+        drawPicker();
+        picker.show();
+        Window window = picker.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(0));
+            int across = getResources().getDisplayMetrics().widthPixels - dp(32);
+            window.setLayout(Math.min(dp(360), across), ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+    }
+
+    private void drawPicker() {
+        pickTitle.setText(String.valueOf(pickYear));
+        for (int m = 1; m <= 12; m++) {
+            YearMonth month = YearMonth.of(pickYear, m);
+            Button button = pickMonths[m - 1];
+            if (month.equals(view)) {
+                outlined(button);
+            } else {
+                plain(button);
+                // This month in bold, like today on the calendar.
+                if (month.equals(thisMonth)) button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+            }
+            enable(button, pickable(month));
+        }
+        enable(pickPrev, anyPickable(pickYear - 1));
+        enable(pickNext, anyPickable(pickYear + 1));
     }
 
     private void showUpdated() {
@@ -624,7 +797,7 @@ public class MainActivity extends Screen {
         for (Map.Entry<String, LinearLayout> cell : cells.entrySet()) {
             fill(cell.getValue(), LocalDate.parse(cell.getKey()), found.days.get(cell.getKey()));
         }
-        showRow(monthRow, Words.monthName(found.month.getMonthValue()), found.monthTotals);
+        showRow(monthRow, "Month", found.monthTotals);
         period = found.period;
         periodLine.setVisibility(period == null ? View.GONE : View.VISIBLE);
         if (period != null) {

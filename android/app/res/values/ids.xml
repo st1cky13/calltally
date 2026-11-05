@@ -4,6 +4,11 @@
     <item type="id" name="month_title" />
     <item type="id" name="month_prev" />
     <item type="id" name="month_next" />
+    <item type="id" name="month_now" />
+    <item type="id" name="month_pick" />
+    <item type="id" name="pick_year" />
+    <item type="id" name="pick_prev" />
+    <item type="id" name="pick_next" />
     <item type="id" name="total_month" />
     <item type="id" name="total_period" />
     <item type="id" name="period_prev" />
@@ -45,7 +50,6 @@
     <item type="id" name="theme_plum" />
     <item type="id" name="theme_amber" />
     <item type="id" name="theme_slate" />
-    <item type="id" name="look_default" />
     <item type="id" name="run_line" />
     <item type="id" name="run_now" />
     <item type="id" name="contact_row" />
