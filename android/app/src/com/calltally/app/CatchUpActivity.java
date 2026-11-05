@@ -132,7 +132,15 @@ public class CatchUpActivity extends Screen {
     @Override
     protected void onResume() {
         super.onResume();
-        if (!isFinishing()) refresh();
+        if (isFinishing()) return;
+        // The captured previous app only matters while Call Tally holds the role. If it no longer holds it (handed back
+        // here, or switched back by hand in Settings), forget the fresh flag so a later Switch back can't reuse a stale
+        // app. While the role is still held, leave it: the normal flow must survive a recreate or process kill before the
+        // hand-back and still return to the previous app.
+        if (!Roles.holdsSmsRole(this)) {
+            Sync.preferences(this).edit().putBoolean("prev_sms_fresh", false).commit();
+        }
+        refresh();
     }
 
     /** Shows the last catch-up time, and whether Call Tally still holds the role, with the switch-back button. */
@@ -185,8 +193,10 @@ public class CatchUpActivity extends Screen {
             if (Roles.holdsSmsRole(this)) {
                 readThenHandBack();
             } else {
-                // The request was blocked or declined. Offer the Settings route, which works where the request doesn't,
-                // and show what the phone reports on its own line, so the owner can screenshot it for diagnosis.
+                // The request was blocked or declined, so Call Tally never took the role. Drop the app we captured and its
+                // fresh flag, so a decline leaves nothing fresh for a later Switch back to open. Then offer the Settings
+                // route, which works where the request doesn't, and show what the phone reports for diagnosis.
+                Sync.preferences(this).edit().putString("prev_sms", null).putBoolean("prev_sms_fresh", false).commit();
                 result.setText(Passthrough.REFUSED + " You can set Call Tally as the messaging app in Settings."
                     + "\nMessaging app: " + Roles.report(this));
                 settings.setVisibility(View.VISIBLE);

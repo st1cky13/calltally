@@ -526,6 +526,12 @@ public class OptionsActivity extends Screen {
     protected void onResume() {
         super.onResume();
         if (isFinishing()) return;
+        // The captured previous app only matters while Call Tally holds the role. If it no longer holds it (handed back,
+        // or switched back by hand in Settings), forget the fresh flag so the Options Switch back can't reuse a stale app.
+        // While the role is still held, leave it, so the normal catch-up hand-back still returns to the previous app.
+        if (!Roles.holdsSmsRole(this)) {
+            Sync.preferences(this).edit().putBoolean("prev_sms_fresh", false).commit();
+        }
         Sync.preferences(this).registerOnSharedPreferenceChangeListener(runs);
         load();
     }
