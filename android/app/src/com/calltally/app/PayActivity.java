@@ -228,8 +228,9 @@ public class PayActivity extends Screen {
                         days = period == null ? "14" : String.valueOf(period.days);
                         earliest = e;
                         if (first) now.setText("Do your pay periods repeat every two weeks? Pick the day the current one started.");
-                        else now.setText(period == null ? "No pay period is set. Pick the day one starts." : period.describe(today));
-                        if (chosen != null && chosen.equals(start)) chosen = null;
+                        else if (period == null) now.setText("No pay period is set. Pick the day the current one started.");
+                        else now.setText(period.describe(today) + ". To change it, pick the day the current one started.");
+                        if (chosen != null && (chosen.equals(start) || chosen.isAfter(today))) chosen = null;
                         view = keptView != null ? keptView : YearMonth.from(start != null ? start : today);
                         if (view.isAfter(thisMonth)) view = thisMonth;
                         drawCal();
@@ -281,10 +282,16 @@ public class PayActivity extends Screen {
         if (isChosen) filled(button);
         else if (isSet) outlined(button);
         button.setSelected(isChosen);
+        // A pay period can't start after today.
+        if (date.isAfter(today)) {
+            enable(button, false);
+            return button;
+        }
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                chosen = date.equals(start) ? null : date;
+                // The set day, or the day already chosen, clears the choice.
+                chosen = date.equals(start) || date.equals(chosen) ? null : date;
                 drawCal();
                 drawReview();
             }

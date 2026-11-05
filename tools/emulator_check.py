@@ -507,6 +507,29 @@ def main():
         check("Next asks for the pay period with a calendar and Skip",
               text_of(nodes, "pay_question") == "Do your pay periods repeat every two weeks? Pick the day the current one started."
               and len(by_id(nodes, "cal_day")) >= 28 and not by_id(nodes, "confirm"), repr(text_of(nodes, "pay_question")))
+        # The calendar opens on this month. Its 1st is never after today: picking it shows the review, picking it
+        # again clears it, and every day after today can't be picked.
+        today = datetime.strptime(run.adb("shell", "date", "+%Y-%m-%d").strip(), "%Y-%m-%d").date()
+
+        def cal_days(ns):
+            return [(datetime.strptime(n.get("content-desc"), "%A, %B %d, %Y").date(), n) for n in by_id(ns, "cal_day")]
+        pick = today.replace(day=1)
+        run.tap([n for day, n in cal_days(nodes) if day == pick][0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "review")), 15)
+        want_review = f"Pay periods start: not set → {pick.strftime('%a %b')} {pick.day}"
+        picked = [n.get("selected") for day, n in cal_days(nodes) if day == pick]
+        check("picking a past day shows the review with that day chosen",
+              text_of(nodes, "review") == want_review and picked == ["true"] and bool(by_id(nodes, "confirm")),
+              f"{text_of(nodes, 'review')!r} selected {picked}")
+        run.tap([n for day, n in cal_days(nodes) if day == pick][0])
+        nodes = run.wait_for(lambda ns: not by_id(ns, "review") and bool(by_id(ns, "cal_day")), 15)
+        check("picking the chosen day again clears the choice",
+              not by_id(nodes, "review") and not by_id(nodes, "confirm") and bool(by_id(nodes, "pay_skip"))
+              and all(n.get("selected") == "false" for day, n in cal_days(nodes)),
+              f"review {text_of(nodes, 'review')!r} selected {[str(d) for d, n in cal_days(nodes) if n.get('selected') == 'true']}")
+        wrong = [str(day) for day, n in cal_days(nodes) if (n.get("enabled") == "true") != (day <= today)]
+        check("days after today can't be picked, and today and every day before it can",
+              bool(cal_days(nodes)) and not wrong, f"today {today} wrong {wrong}")
         run.tap(by_id(nodes, "pay_skip")[0])
         nodes = run.wait_for(lambda ns: bool(by_id(ns, "month_title")) and bool(by_id(ns, "total_all")), 30)
         run.shot("05-month-after-first-start")
