@@ -2,15 +2,20 @@
 """Checks the Android app end to end on the emulator, by reading the record it keeps on the phone.
 
 Starts the emulator, builds and installs a test copy of the app (CALLTALLY_DEBUG=true: debuggable, with the test hook),
-seeds contacts, calls and messages, ticks Dana-Work and Sam - Work through the test hook, runs the app and copies its record
+seeds contacts, calls and messages, then goes through the first start on the screen: the page, Continue and Android's
+permission questions, Who counts with a tick, Skip on the pay period, and the month screen with no pay period row. Then it
+sets the pay period through the test hook, ticks Dana-Work and Sam - Work through it, runs the app and copies its record
 off the emulator to check it with sqlite3 against what calltally.py would have kept. Then it unticks Dana, ticks her again
 and deletes her contact, checking that nothing is ever lost, ticks Mom to check that conversations keep their identity,
 and takes the app's permissions away. Last it opens the month screen and reads it with uiautomator: the title, the three
 totals rows and the grid, counted as calltally.py counts the record, with every button at least 40dp tall; then Who
-counts with its ticks and search; then a damaged record, which must be moved aside. Prints one pass or fail line per
-check, exits 1 on any fail, and always stops the emulator and adb.
+counts with its ticks and search; then a damaged record, which must be moved aside, with an OK that clears the note.
+Last, an update over what the uploading app (0.6.0) leaves: a fresh install given its sent.txt and its last run's words by
+hand, then the same build installed over it, which must open on the first-start page with the old files gone. Prints one
+pass or fail line per check, exits 1 on any fail, and always stops the emulator and adb. Screenshots of the first start
+go into the output folder's shots/ unless --shots names another.
 
-Usage: python3 tools/emulator_check.py [--out FOLDER]   (default: a new folder under $TMPDIR)
+Usage: python3 tools/emulator_check.py [--out FOLDER] [--shots FOLDER]   (default: a new folder under $TMPDIR)
 Needs the Android tools in ~/local/calltally-build (see android/app/build.sh) and the AVD "ct". Takes a few minutes.
 """
 import argparse
@@ -132,16 +137,49 @@ class Run:
 
     # the app and its data
 
-    def build_and_install(self):
+    def build_and_install(self, grant=True):
         env = {**os.environ, "CALLTALLY_DEBUG": "true", "CALLTALLY_OUT": "emu"}
         done = subprocess.run(["sh", str(ROOT / "android/app/build.sh")], capture_output=True, text=True, env=env, cwd=ROOT)
         (self.out / "build.log").write_text(done.stdout + done.stderr)
         if done.returncode != 0:
             raise RuntimeError("the test app didn't build; see build.log")
-        apk = done.stdout.strip().splitlines()[-1]
-        self.adb("install", "-r", apk, timeout=180)
+        self.apk = done.stdout.strip().splitlines()[-1]
+        self.adb("install", "-r", self.apk, timeout=180)
+        if grant:
+            self.grant()
+
+    def grant(self):
         for permission in PERMISSIONS:
             self.sh("pm", "grant", APP, permission)
+
+    def granted(self):
+        """The app's permissions among the three it needs that Android shows as granted."""
+        out = self.adb("shell", "dumpsys", "package", APP)
+        return {p for p in PERMISSIONS if f"{p}: granted=true" in out}
+
+    def pay(self, start):
+        """Sets the pay period start through the test hook, as the first start or Options would."""
+        out = self.sh("am", "broadcast", "--include-stopped-packages", "-a", f"{APP}.TEST_TICK", "-n", f"{APP}/.TestHook",
+                      "--es", "pay_start", start)
+        return out.split('data="')[1].split('"')[0] if 'data="' in out else out.strip()
+
+    def put(self, path, data):
+        """Writes a file into the app's own folder as the app would, with run-as."""
+        folder = path.rsplit("/", 1)[0]
+        done = subprocess.run([str(ADB), "-e", "exec-in", f"run-as {APP} sh -c 'mkdir -p {folder} && cat > {path}'"],
+                              input=data, capture_output=True, env=self.env, timeout=60)
+        if done.returncode != 0:
+            raise RuntimeError(f"couldn't write {path}: {done.stderr!r}")
+
+    def app_files(self, folder):
+        """The names in one of the app's own folders, or [] when the folder isn't there."""
+        out = self.adb("exec-out", "run-as", APP, "ls", folder, check=False)
+        return [] if "No such file" in out else out.split()
+
+    def shot(self, name):
+        """A screenshot of the emulator's screen into the shots folder."""
+        data = self.adb("exec-out", "screencap", "-p", binary=True)
+        (self.shots / f"{name}.png").write_bytes(data)
 
     def tick(self, numbers, untick=False):
         """Ticks (or unticks) the people who own these numbers through the test hook. Returns the hook's answer."""
@@ -272,6 +310,12 @@ class Run:
             time.sleep(1)
         return nodes
 
+    def tap_text(self, nodes, text):
+        found = [n for n in nodes if n.get("text") == text]
+        if not found:
+            raise RuntimeError(f"nothing reads {text!r} on the screen")
+        self.tap(found[0])
+
     def tap(self, node):
         (left, top), (right, bottom) = bounds(node)
         self.sh("input", "tap", (left + right) // 2, (top + bottom) // 2)
@@ -297,6 +341,11 @@ def by_id(nodes, name):
 def text_of(nodes, name):
     found = by_id(nodes, name)
     return found[0].get("text", "") if found else None
+
+
+def boxes(ns):
+    """The app's check boxes on screen, by their words: "true" or "false"."""
+    return {n.get("text"): n.get("checked") for n in ns if n.get("class", "").endswith("CheckBox") and n.get("package") == APP}
 
 
 def full_time(s):
@@ -394,26 +443,90 @@ def expected(groups, zone):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", help="folder for the logs and the copies of the record")
+    parser.add_argument("--shots", help="folder for the screenshots (default: shots/ in the output folder)")
     args = parser.parse_args()
     out = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="calltally-emu-", dir=os.environ.get("TMPDIR")))
     out.mkdir(parents=True, exist_ok=True)
     check = Check()
     run = Run(out)
+    run.shots = Path(args.shots) if args.shots else out / "shots"
+    run.shots.mkdir(parents=True, exist_ok=True)
     print(f"Logs and copies of the record: {out}", flush=True)
     try:
         run.start_emulator()
         check("emulator started", True)
-        run.build_and_install()
-        check("test app built, installed and allowed", True)
+        run.build_and_install(grant=False)
+        check("test app built and installed", True)
         groups = run.seed()
         check("contacts, calls, texts and group messages seeded", True)
         zone = run.device_zone()
         want = expected(groups, zone)
+        density = run.density()
+
+        # The first start, on the screen: a fresh install opens on the page, Continue asks Android for the permissions,
+        # Who counts opens with its hint, then the pay period question with Skip, then the month screen.
+        run.adb("logcat", "-b", "crash", "-c", check=False)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "start_continue")), 30)
+        run.shot("01-first-start")
+        small, outside = screen_problems(nodes, density)
+        check("a fresh install opens on the first-start page, not the month",
+              bool(by_id(nodes, "start_continue")) and not by_id(nodes, "month_title")
+              and (text_of(nodes, "start_text") or "").startswith("Call Tally shows your time on calls")
+              and not small and not outside, f"{text_of(nodes, 'start_text')!r} small {small[:3]} outside {outside[:3]}")
+        run.tap(by_id(nodes, "start_continue")[0])
+
+        def asking(ns):
+            return any(n.get("package") == "com.android.permissioncontroller" for n in ns)
+        nodes = run.wait_for(asking, 20)
+        run.shot("02-permission-question")
+        check("Continue asks Android for the permissions", asking(nodes), str({n.get("package") for n in nodes}))
+        for _ in range(8):
+            allow = [n for n in nodes if (n.get("resource-id") or "").endswith("permission_allow_button")]
+            if not allow:
+                allow = [n for n in nodes if n.get("package") == "com.android.permissioncontroller" and n.get("text") in ("Allow", "ALLOW")]
+            if allow:
+                run.tap(allow[0])
+                time.sleep(1.5)
+            elif by_id(nodes, "who_next"):
+                break
+            else:
+                time.sleep(1)
+            nodes = run.nodes()
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "who_next")) and "Dana-Work" in boxes(ns), 30)
+        run.shot("03-who-counts-first")
+        check("allowing all three opens Who counts with the hint and nobody ticked",
+              run.granted() == set(PERMISSIONS) and bool(by_id(nodes, "who_next")) and not by_id(nodes, "close")
+              and (text_of(nodes, "who_note") or "").startswith("Tick the people whose calls and texts should count")
+              and "true" not in boxes(nodes).values(), f"{sorted(run.granted())} {text_of(nodes, 'who_note')!r} {boxes(nodes)}")
+        run.tap_text(nodes, "Dana-Work")
+        nodes = run.wait_for(lambda ns: boxes(ns).get("Dana-Work") == "true", 15)
+        run.tap(by_id(nodes, "who_next")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_skip")), 20)
+        run.shot("04-pay-period-first")
+        check("Next asks for the pay period with a calendar and Skip",
+              text_of(nodes, "pay_question") == "Do your pay periods repeat every two weeks? Pick the day the current one started."
+              and len(by_id(nodes, "cal_day")) >= 28 and not by_id(nodes, "confirm"), repr(text_of(nodes, "pay_question")))
+        run.tap(by_id(nodes, "pay_skip")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "month_title")) and bool(by_id(ns, "total_all")), 30)
+        run.shot("05-month-after-first-start")
+        settings = dict(sqlite3.connect(f"file:{run.record() / DATABASE}?mode=ro", uri=True).execute("SELECT key,value FROM settings").fetchall())
+        ticked = people(out / f"record-{run.pulls}")
+        check("after a tick and Skip the month screen opens with no pay period row, and Dana is ticked",
+              bool(by_id(nodes, "month_title")) and not by_id(nodes, "total_period") and "pay_period_start" not in settings
+              and ticked.get("Dana-Work", {}).get("ticked") == 1, f"{settings} {list(ticked)} period row {bool(by_id(nodes, 'total_period'))}")
+        run.sh("am", "force-stop", APP)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "month_title")), 30)
+        check("opened again, the app goes straight to the month", bool(by_id(nodes, "month_title")) and not by_id(nodes, "start_continue"))
+        answer = run.pay("2026-10-25")
+        check("pay period set through the test hook for the checks below", answer == "pay period set", answer)
+
         answer = run.tick([DANA1, SAM])
         check("Dana-Work and Sam - Work ticked through the test hook", answer == "ticked 2", answer)
 
         # Run 1: everything allowed, Dana and Sam ticked.
-        if not check("app ran", run.run_app(run.device_mark(), start_screen=True)):
+        if not check("app ran", run.run_app(run.device_mark())):
             raise RuntimeError("no run finished")
         first = run.record()
         got = rows(first)
@@ -536,6 +649,7 @@ def main():
             run.sh("pm", "grant", APP, permission)
         run.sh("am", "force-stop", APP)
         run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        time.sleep(3)
         copy = out / "screen.db"
         shutil.copyfile(run.record() / DATABASE, copy)
         store = calltally.Store(copy)
@@ -561,7 +675,6 @@ def main():
               repr(text_of(nodes, "total_all")))
         check("the grid holds every day of the month", len(by_id(nodes, "grid")) == 1 and len(by_id(nodes, "day_cell")) == last,
               f"{len(by_id(nodes, 'day_cell'))} cells")
-        density = run.density()
         small, outside = screen_problems(nodes, density)
         check("every button on the month screen is at least 40dp tall and nothing reaches past the screen",
               not small and not outside, f"small {small[:3]} outside {outside[:3]}")
@@ -591,9 +704,6 @@ def main():
         run.tap(by_id(nodes, "gear")[0])
         nodes = run.wait_for(lambda ns: bool(by_id(ns, "who_open")), 30)
         run.tap(by_id(nodes, "who_open")[0])
-
-        def boxes(ns):
-            return {n.get("text"): n.get("checked") for n in ns if n.get("class", "").endswith("CheckBox") and n.get("package") == APP}
         nodes = run.wait_for(lambda ns: "Dana-Work" in boxes(ns), 30)
         shown = boxes(nodes)
         check("Who counts shows Dana unticked though she is no longer on the phone",
@@ -613,12 +723,54 @@ def main():
         size = int(run.adb("shell", "stat", "-c", "%s", base).strip())
         run.adb("shell", f"dd if=/dev/zero of={base} bs=100 count=1 conv=notrunc")
         run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
-        nodes = run.wait_for(lambda ns: "damaged" in (text_of(ns, "problem") or ""), 40)
+        nodes = run.wait_for(lambda ns: "damaged" in (text_of(ns, "damaged") or ""), 40)
         listing = run.adb("shell", "ls", "-l", f"/data/data/{APP}/databases/")
         aside = [line for line in listing.splitlines() if ".damaged-" in line and not line.rstrip().endswith(("-journal", "-wal", "-shm"))]
         check("a damaged record is kept under a new name and the month screen says so",
-              len(aside) == 1 and str(size) in aside[0].split() and "kept as calltally.db.damaged-" in (text_of(nodes, "problem") or ""),
-              f"{listing.strip()[:300]} | {text_of(nodes, 'problem')!r}")
+              len(aside) == 1 and str(size) in aside[0].split() and "kept as calltally.db.damaged-" in (text_of(nodes, "damaged") or ""),
+              f"{listing.strip()[:300]} | {text_of(nodes, 'damaged')!r}")
+        if by_id(nodes, "damaged_ok"):
+            run.tap(by_id(nodes, "damaged_ok")[0])
+        gone = run.wait_for(lambda ns: bool(by_id(ns, "month_title")) and not by_id(ns, "damaged"), 15)
+        run.sh("am", "force-stop", APP)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        again = run.wait_for(lambda ns: bool(by_id(ns, "month_title")), 30)
+        time.sleep(2)
+        again = run.nodes()
+        check("OK hides the damaged-record note, and it stays hidden when the app opens again",
+              not by_id(gone, "damaged") and bool(by_id(again, "month_title")) and not by_id(again, "damaged"),
+              repr(text_of(again, "damaged")))
+
+        # An update over the uploading app: what 0.6.0 leaves is its list of what it sent, its last run's words and its
+        # permissions, and no record. The same build is installed over that and must open on the first-start page with
+        # the old files gone and nothing of the old run shown.
+        run.sh("am", "force-stop", APP)
+        run.adb("uninstall", APP, timeout=120)
+        run.adb("install", run.apk, timeout=180)
+        run.grant()
+        old_words = "Nov 4, 9:41 PM\n1210 calls and texts found, 3 uploaded."
+        run.put("files/sent.txt", b"abc123\ndef456\n")
+        run.put("shared_prefs/status.xml", (
+            "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n"
+            f"    <string name=\"status\">{old_words}</string>\n"
+            "    <string name=\"problem\">Upload failed: server unreachable</string>\n"
+            "    <string name=\"crash\">IOException at Sync.java:212</string>\n"
+            "</map>\n").encode())
+        before = (run.app_files("files"), run.app_files("shared_prefs"), run.app_files("databases"))
+        run.adb("install", "-r", run.apk, timeout=180)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "start_continue")), 30)
+        run.shot("06-first-start-after-update")
+        status = run.adb("exec-out", "run-as", APP, "cat", "shared_prefs/status.xml", check=False)
+        check("an update over 0.6.0's files opens on the first-start page, with sent.txt and the old run's words gone",
+              "sent.txt" in before[0] and "status.xml" in before[1] and not before[2] and bool(by_id(nodes, "start_continue"))
+              and "sent.txt" not in run.app_files("files") and "uploaded" not in status and "Upload" not in status and "crash" not in status,
+              f"before {before} after {run.app_files('files')} status {status[:200]!r}")
+        run.tap(by_id(nodes, "start_continue")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "who_next")), 20)
+        check("with the old app's permissions kept, Continue goes straight to Who counts", bool(by_id(nodes, "who_next")))
+        crashes = run.adb("logcat", "-d", "-b", "crash", check=False)
+        check("the app never crashed during the check", APP not in crashes, crashes.strip()[-400:])
     except Exception as error:  # noqa: BLE001 - every failure is reported as a fail line, then everything stops
         check("the check ran to the end", False, f"{type(error).__name__}: {error}")
     finally:

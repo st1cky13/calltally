@@ -1,6 +1,7 @@
 package com.calltally.app;
 
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
@@ -39,16 +40,28 @@ public class PayActivity extends Screen {
     private Button close;
     private Button revert;
     private Button confirm;
+    private Button skip;
+    private boolean first;
+    private YearMonth keptView;
 
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         today = LocalDate.now();
         thisMonth = YearMonth.from(today);
+        // Part of the first start: the question, Skip, and the month screen after.
+        first = getIntent().getBooleanExtra("first", false);
+        // The day picked and the month shown, kept through a rotation or a new look.
+        Bundle state = saved != null ? saved : getIntent().getExtras();
+        if (state != null) {
+            if (state.getString("chosen") != null) chosen = LocalDate.parse(state.getString("chosen"));
+            if (state.getString("calView") != null) keptView = YearMonth.parse(state.getString("calView"));
+        }
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(10), dp(16), dp(12));
-        now = text("", 14, muted, false);
+        now = text(first ? "Do your pay periods repeat every two weeks? Pick the day the current one started." : "", 14, first ? txt : muted, false);
+        now.setId(R.id.pay_question);
         column.addView(now, wide());
 
         LinearLayout nav = row();
@@ -129,11 +142,50 @@ public class PayActivity extends Screen {
                 save();
             }
         });
-        footer = footer(close, revert, confirm);
-        // Close shows alone, or Revert changes and Confirm side by side.
-        ((LinearLayout.LayoutParams) revert.getLayoutParams()).leftMargin = 0;
-        frame("Pay periods", scroll, false);
+        skip = button("Skip");
+        skip.setId(R.id.pay_skip);
+        skip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // No pay period: its row stays hidden until one is set in Options.
+                StartActivity.finishFirstStart(PayActivity.this);
+            }
+        });
+        if (first) {
+            footer = footer(skip, confirm);
+            // Confirm shows once a day is picked.
+            confirm.setVisibility(View.GONE);
+            close.setVisibility(View.GONE);
+            revert.setVisibility(View.GONE);
+        } else {
+            footer = footer(close, revert, confirm);
+            skip.setVisibility(View.GONE);
+            revert.setVisibility(View.GONE);
+            confirm.setVisibility(View.GONE);
+            // Close shows alone, or Revert changes and Confirm side by side.
+            ((LinearLayout.LayoutParams) revert.getLayoutParams()).leftMargin = 0;
+        }
+        frame(first ? "Pay period" : "Pay periods", scroll, false);
         load();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        keep(out);
+    }
+
+    @Override
+    void keep(Intent intent) {
+        Bundle out = new Bundle();
+        keep(out);
+        intent.putExtras(out);
+    }
+
+    private void keep(Bundle out) {
+        out.putString("chosen", chosen == null ? null : chosen.toString());
+        YearMonth shown = view != null ? view : keptView;
+        if (shown != null) out.putString("calView", shown.toString());
     }
 
     private Button arrow(String label, String description, int id) {
@@ -151,18 +203,18 @@ public class PayActivity extends Screen {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                String startText = null, length = null, first = null, problem = null;
+                String startText = null, length = null, firstDay = null, problem = null;
                 try {
                     Record record = Record.get(context);
                     startText = record.setting("pay_period_start");
                     length = record.setting("pay_period_days");
-                    first = record.earliest();
+                    firstDay = record.earliest();
                 } catch (Record.TooNew error) {
                     problem = error.getMessage();
                 } catch (RuntimeException error) {
                     problem = Record.UNREADABLE;
                 }
-                final String s = startText, d = length, e = first, trouble = problem;
+                final String s = startText, d = length, e = firstDay, trouble = problem;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -175,8 +227,11 @@ public class PayActivity extends Screen {
                         start = period == null ? null : period.start;
                         days = period == null ? "14" : String.valueOf(period.days);
                         earliest = e;
-                        now.setText(period == null ? "No pay period is set. Pick the day one starts." : period.describe(today));
-                        view = YearMonth.from(start != null ? start : today);
+                        if (first) now.setText("Do your pay periods repeat every two weeks? Pick the day the current one started.");
+                        else now.setText(period == null ? "No pay period is set. Pick the day one starts." : period.describe(today));
+                        if (chosen != null && chosen.equals(start)) chosen = null;
+                        view = keptView != null ? keptView : YearMonth.from(start != null ? start : today);
+                        if (view.isAfter(thisMonth)) view = thisMonth;
                         drawCal();
                         drawReview();
                     }
@@ -207,8 +262,9 @@ public class PayActivity extends Screen {
             }
             grid.addView(row, rowParams);
         }
-        // From the month of the earliest data, or of the current start if that is earlier, up to this month.
-        LocalDate first = start == null ? today : start;
+        // From the month of the earliest data, or of the current start if that is earlier, up to this month. Always back
+        // to last month at least, so the start of the current period can be picked before anything is in the record.
+        LocalDate first = start == null || start.isAfter(today.minusMonths(1)) ? today.minusMonths(1) : start;
         if (earliest != null && LocalDate.parse(earliest).isBefore(first)) first = LocalDate.parse(earliest);
         enable(calPrev, view.isAfter(YearMonth.from(first)));
         enable(calNext, view.isBefore(thisMonth));
@@ -238,8 +294,10 @@ public class PayActivity extends Screen {
 
     private void drawReview() {
         boolean changing = chosen != null;
-        close.setVisibility(changing ? View.GONE : View.VISIBLE);
-        revert.setVisibility(changing ? View.VISIBLE : View.GONE);
+        if (!first) {
+            close.setVisibility(changing ? View.GONE : View.VISIBLE);
+            revert.setVisibility(changing ? View.VISIBLE : View.GONE);
+        }
         confirm.setVisibility(changing ? View.VISIBLE : View.GONE);
         enable(confirm, true);
         review.setVisibility(changing ? View.VISIBLE : View.GONE);
@@ -280,7 +338,9 @@ public class PayActivity extends Screen {
                     @Override
                     public void run() {
                         if (isDestroyed()) return;
-                        if (saved) {
+                        if (saved && first) {
+                            StartActivity.finishFirstStart(PayActivity.this);
+                        } else if (saved) {
                             finish();
                         } else {
                             enable(confirm, true);

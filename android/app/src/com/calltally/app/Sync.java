@@ -9,7 +9,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.provider.CallLog;
-import java.io.File;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -24,6 +23,8 @@ final class Sync {
     static final String NOT_ALLOWED = "Needs permission. Open this app to allow it.";
     static final String NOBODY = "Nobody is ticked yet. Tap the gear, then Who counts, to choose the people who count.";
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+    /** A run was asked for while one was going: the one going does another straight after, so nothing waits for the schedule. */
+    private static final AtomicBoolean AGAIN = new AtomicBoolean(false);
 
     private Sync() {}
 
@@ -84,8 +85,11 @@ final class Sync {
         }
     }
 
-    static boolean neverRun(Context context) {
-        return !prefs(context).contains("status");
+    /** How long ago the last run started, in milliseconds, or Long.MAX_VALUE when none has. */
+    static long sinceLastRun(Context context) {
+        long started = prefs(context).getLong("run_started", 0);
+        long now = System.currentTimeMillis();
+        return started <= 0 || started > now ? Long.MAX_VALUE : now - started;
     }
 
     /**
@@ -129,8 +133,6 @@ final class Sync {
     static String problem(Context context) {
         SharedPreferences saved = prefs(context);
         StringBuilder out = new StringBuilder();
-        String damaged = saved.getString("damaged", null);
-        if (damaged != null) out.append(damaged);
         String problem = saved.getString("problem", null);
         String schedule = saved.getString("schedule_problem", null);
         String crash = saved.getString("crash", null);
@@ -146,6 +148,15 @@ final class Sync {
             ? "The record was damaged and couldn't be read. It was kept as " + asideName + " and a new record started from what the phone holds."
             : "The record is damaged and couldn't be read or moved aside.";
         prefs(context).edit().putString("damaged", text).commit();
+    }
+
+    /** The damaged-record note, until OK is tapped on the month screen, or null. */
+    static String damaged(Context context) {
+        return prefs(context).getString("damaged", null);
+    }
+
+    static void clearDamaged(Context context) {
+        prefs(context).edit().remove("damaged").commit();
     }
 
     static SharedPreferences preferences(Context context) {
@@ -189,22 +200,39 @@ final class Sync {
     }
 
     /**
-     * One run: reads the phone's contacts to keep the people table up to date, then reads calls and texts, decides with
-     * the ticked people's numbers, and adds what's new to the record. Returns false if another run was already going, so
-     * this one did nothing.
+     * Reads the phone into the record now. When a run is already going, this returns false at once and that run does one
+     * more straight after it ends, so a new tick or a change never waits for the 15-minute schedule.
      */
     static boolean run(Context context) {
-        if (!RUNNING.compareAndSet(false, true)) return false;
+        AGAIN.set(true);
+        boolean ran = false;
+        // A request that comes just as a run ends finds RUNNING clear and starts the next one here.
+        while (AGAIN.get() && RUNNING.compareAndSet(false, true)) {
+            ran = true;
+            try {
+                while (AGAIN.getAndSet(false)) once(context);
+            } finally {
+                RUNNING.set(false);
+            }
+        }
+        return ran;
+    }
+
+    /**
+     * One run: reads the phone's contacts to keep the people table up to date, then reads calls and texts, decides with
+     * the ticked people's numbers, and adds what's new to the record.
+     */
+    private static void once(Context context) {
+        // Before anything is saved: what 0.6.0 and earlier left behind goes, once.
+        StartActivity.forgetOldApp(context);
         long started = System.currentTimeMillis();
         try {
             prefs(context).edit().putLong("run_started", started).commit();
             if (!allowed(context)) {
                 note(context, NOT_ALLOWED, NOT_ALLOWED);
-                return true;
+                return;
             }
             Record record = Record.get(context);
-            // Left by 0.6.0 and earlier, which uploaded.
-            new File(context.getFilesDir(), "sent.txt").delete();
             String contactsLine = "";
             try {
                 record.refreshPeople(Collector.readContacts(context.getContentResolver()));
@@ -216,7 +244,7 @@ final class Sync {
             if (counting.isEmpty()) {
                 note(context, NOBODY, NOBODY);
                 prefs(context).edit().remove("crash").apply();
-                return true;
+                return;
             }
             Collector collector = new Collector(context, counting, record.conversations());
             List<Rules.Entry> found = collector.collect();
@@ -232,8 +260,9 @@ final class Sync {
                 + (problem.isEmpty() ? "" : "\n" + problem)
                 + contactsLine
                 + (added.unusable > 0 ? "\n" + added.unusable + " couldn't be used and were skipped." : "")
-                + (other == 0 ? "" : other == 1 ? "\nSkipped 1 call of another kind." : "\nSkipped " + other + " calls of other kinds.")
-                + "\n" + collector.groups() + " group chats with ticked people."
+                + (other == 0 ? "" : other == 1 ? "\n1 call of another kind, such as voicemail or blocked, was left out."
+                    : "\n" + other + " calls of other kinds, such as voicemail or blocked, were left out.")
+                + "\n" + (collector.groups() == 1 ? "1 group chat" : collector.groups() + " group chats") + " with ticked people."
                 + (collector.conversationListWorked() ? "" : "\nConversation list unavailable, using messages instead."), problems, added.added);
             prefs(context).edit().remove("crash").apply();
         } catch (Record.TooNew error) {
@@ -246,13 +275,8 @@ final class Sync {
             String text = "Something went wrong: " + error.getClass().getSimpleName();
             note(context, text, text);
         } finally {
-            try {
-                // Which run finished last, by the moment it started: the emulator check waits on this.
-                prefs(context).edit().putLong("run_done", started).commit();
-            } finally {
-                RUNNING.set(false);
-            }
+            // Which run finished last, by the moment it started: the emulator check waits on this.
+            prefs(context).edit().putLong("run_done", started).commit();
         }
-        return true;
     }
 }

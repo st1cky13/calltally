@@ -14,6 +14,8 @@ import java.util.Set;
  * does without the screen. It is in the manifest only when build.sh runs with CALLTALLY_DEBUG=true, and it does nothing
  * unless the build is also debuggable.
  *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --esa numbers 5551234567 [--ez untick true]
+ * It also sets the pay period start, as the first start or Options would, for the checks that need one:
+ *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --es pay_start 2026-10-25
  */
 public class TestHook extends BroadcastReceiver {
     static final String ACTION = "com.calltally.app.TEST_TICK";
@@ -27,6 +29,15 @@ public class TestHook extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
+                    String payStart = intent.getStringExtra("pay_start");
+                    if (payStart != null) {
+                        if (PayPeriod.of(payStart, "14") == null) throw new IllegalArgumentException("pay_start");
+                        Record record = Record.get(context);
+                        record.setSetting("pay_period_start", payStart);
+                        record.setSetting("pay_period_days", "14");
+                        result.setResult(1, "pay period set", null);
+                        return;
+                    }
                     String[] given = intent.getStringArrayExtra("numbers");
                     boolean untick = intent.getBooleanExtra("untick", false);
                     Set<String> keys = new HashSet<>();

@@ -21,7 +21,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import java.time.LocalDate;
 
-/** Options: Who counts, the pay period, hiding ignored entries, the look, and the last run. Saved in the record. */
+/** Options: Who counts, the pay period, hiding ignored entries, the look, the last run, and the first-start page. Saved in the record. */
 public class OptionsActivity extends Screen {
     private static final int[] THEME_COLORS = {R.color.teal_accent, R.color.blue_accent, R.color.plum_accent, R.color.amber_accent, R.color.slate_accent};
     private static final int[] THEME_IDS = {R.id.theme_teal, R.id.theme_blue, R.id.theme_plum, R.id.theme_amber, R.id.theme_slate};
@@ -160,6 +160,21 @@ public class OptionsActivity extends Screen {
             }
         });
         column.addView(runNow, resetGap);
+
+        heading("First start");
+        Button again = button("Show the first-start page again");
+        again.setId(R.id.start_again);
+        again.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // Ticks, the pay period and the record stay as they are; the page leads back to the month as before.
+                StartActivity.showAgain(OptionsActivity.this);
+                startActivity(new Intent(OptionsActivity.this, StartActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+                finish();
+            }
+        });
+        column.addView(again, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(column);

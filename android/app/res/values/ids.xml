@@ -49,4 +49,17 @@
     <item type="id" name="run_line" />
     <item type="id" name="run_now" />
     <item type="id" name="contact_row" />
+    <item type="id" name="start_title" />
+    <item type="id" name="start_text" />
+    <item type="id" name="start_refused" />
+    <item type="id" name="start_app_info" />
+    <item type="id" name="start_continue" />
+    <item type="id" name="start_again" />
+    <item type="id" name="who_note" />
+    <item type="id" name="who_list" />
+    <item type="id" name="who_next" />
+    <item type="id" name="pay_question" />
+    <item type="id" name="pay_skip" />
+    <item type="id" name="damaged" />
+    <item type="id" name="damaged_ok" />
 </resources>

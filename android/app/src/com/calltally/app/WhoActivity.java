@@ -1,6 +1,7 @@
 package com.calltally.app;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
@@ -55,12 +56,20 @@ public class WhoActivity extends Screen {
     private boolean changed;
     private boolean saving;
     private String saveProblem;
-    private final java.util.concurrent.ExecutorService writes = java.util.concurrent.Executors.newSingleThreadExecutor();
+    /**
+     * One worker for the whole app, so the record is read only after every tick already made is written, also when the
+     * screen is drawn again after a rotation.
+     */
+    private static final java.util.concurrent.ExecutorService WRITES = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private static final String HINT = "Tick the people whose calls and texts should count. You can change this later in Options.";
+    private boolean first;
     private int gap;
 
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        // Part of the first start: the hint on top, and Next on to the pay period instead of Close.
+        first = getIntent().getBooleanExtra("first", false);
         gap = dp(16);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
@@ -68,7 +77,8 @@ public class WhoActivity extends Screen {
         note = new TextView(this);
         note.setTextSize(14);
         note.setTextColor(muted);
-        note.setText("Reading your contacts…");
+        note.setId(R.id.who_note);
+        note.setText(first ? HINT : "Reading your contacts…");
         note.setPadding(0, gap / 4, 0, gap / 2);
         search = new EditText(this);
         search.setId(R.id.who_search);
@@ -100,6 +110,7 @@ public class WhoActivity extends Screen {
             }
         });
         ListView list = new ListView(this);
+        list.setId(R.id.who_list);
         adapter = new Adapter();
         list.setAdapter(adapter);
         page.addView(note);
@@ -108,14 +119,26 @@ public class WhoActivity extends Screen {
         list.setDivider(new android.graphics.drawable.ColorDrawable(line));
         list.setDividerHeight(Math.max(1, dp(1)));
         page.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        frame("Who counts", page, true);
+        if (first) {
+            Button next = button("Next");
+            next.setId(R.id.who_next);
+            filled(next);
+            next.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    startActivity(new Intent(WhoActivity.this, PayActivity.class).putExtra("first", true));
+                }
+            });
+            footer = footer(next);
+        }
+        frame("Who counts", page, !first);
         load();
     }
 
     /** Reads the phone's contacts and the people table away from the screen, then shows them together. */
     private void load() {
         final Context context = getApplicationContext();
-        new Thread(new Runnable() {
+        WRITES.execute(new Runnable() {
             @Override
             public void run() {
                 List<Rules.Person> phone = null;
@@ -141,18 +164,19 @@ public class WhoActivity extends Screen {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        if (isDestroyed()) return;
                         all.clear();
                         all.addAll(lines);
                         if (text == null && saveProblem != null) {
                             note.setText(saveProblem);
                             saveProblem = null;
-                        } else note.setText(text != null ? text : "Only ticked people count. Their calls and texts stay counted"
-                            + " even if they leave your contacts.");
+                        } else note.setText(text != null ? text : first ? HINT : "Only ticked people count. Their calls and"
+                            + " texts stay counted even if they leave your contacts.");
                         filter();
                     }
                 });
             }
-        }).start();
+        });
     }
 
     /** Contacts on the phone, and people ticked at some time who are no longer there, sorted by name. */
@@ -244,7 +268,7 @@ public class WhoActivity extends Screen {
     private void save(final Runnable write) {
         saving = true;
         enable(tickAll, false);
-        writes.execute(new Runnable() {
+        WRITES.execute(new Runnable() {
             @Override
             public void run() {
                 String problem = null;
@@ -274,24 +298,23 @@ public class WhoActivity extends Screen {
     }
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // Writes already queued still finish.
-        writes.shutdown();
-    }
-
-    @Override
     protected void onStop() {
         super.onStop();
         // New ticks count from the next run; start one now so the record catches up.
         if (!changed) return;
         changed = false;
         final Context context = getApplicationContext();
-        // After the ticks are written: the writer runs one task at a time, in order.
-        writes.execute(new Runnable() {
+        // After the ticks are written: the worker runs one task at a time, in order. The run itself goes on its own
+        // thread, so the worker is free for the next screen; a run already going does this one straight after.
+        WRITES.execute(new Runnable() {
             @Override
             public void run() {
-                Sync.run(context);
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Sync.run(context);
+                    }
+                }).start();
             }
         });
     }

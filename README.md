@@ -1,64 +1,77 @@
 # calltally
 
-The Android app is becoming a standalone app that keeps its own record on the phone; the server and page below are being retired.
-The app's own screens work like the page: the month with each day's call time and texts, the month, pay period and all
-time totals, each day's calls and texts with Ignore and Restore, the totals by contact, and Options with Who counts, the
-pay period start on a calendar, hiding ignored entries, and System, Light or Dark with five colour themes.
+Call Tally is an Android app that shows your time on calls and your texts with the people you choose, by month, by pay
+period and for all time. It keeps its own record on the phone. Nothing leaves the phone: there is no account, no server
+and no upload.
 
-A private calendar of work calls and texts. It opens on the current month, with arrows to move between months. At the
-top are three totals of call time, calls and texts: the month on screen, the pay period, and all time. The pay period has
-its own arrows. Tap a total to see it by contact. Each day shows its exact
-call time and the number of texts. Click a day to see its entries, and ignore any that shouldn't count. Ignored entries
-stay ignored and can be restored. The gear opens Options: the pay period start, hiding ignored entries in the day view,
-and a light or dark mode with a choice of colour themes, kept in that browser.
+It opens on the current month, with arrows to move between months. Each day shows its exact call time and the number of
+texts. Above the calendar are the month's totals and the pay period's, below it the totals for all time: call time,
+calls and texts. Tap a total to see it by person. Tap a day to see its calls and texts on two tabs, and ignore any entry
+that shouldn't count. Ignored entries stay ignored and can be restored. The gear opens Options: Who counts, the pay
+period start, hiding ignored entries, and System, Light or Dark with five colour themes.
 
-The Android app is how uploads happen. It finds calls and texts with contacts whose name ends in `-Work` and uploads them
-soon after they happen, and about every 15 minutes in case one is missed, including history already on the phone. It
-uploads the time, contact, number, direction and call length, and a short line saying whether its last run went well. It
-never reads what a text said or uploads anything about other contacts, except that a group with a work contact shows how
-many other people are in it.
+## The first start
 
-## Server
-
-Python 3.11 or newer, standard library only. See `deploy/calltally.service`. The page has no login: keep it on a private
-network such as Tailscale and never give it a public address.
-
-To check an install changed nothing, run `python3 tools/totals.py data/calltally.db` before and after and compare the
-two outputs with `diff`.
-
-## Phone
-
-Build with `CALLTALLY_SERVER=https://YOUR-SERVER sh android/app/build.sh` (see that file for the tools it needs), put the
-result in the server's data folder as `calltally.apk`, and download it on the phone from `/phone/calltally.apk`.
-
-1. Install Tailscale and the app, open it and allow what it asks for. If Android blocks a permission, open App info for
-   Call Tally, choose the three-dot menu, and pick "Allow restricted settings".
-2. Set its battery use to unrestricted, and turn off "remove permissions if app is unused".
-
-The page's "Updated" label turns yellow if the phone hasn't uploaded for three hours, and red after a full day. If the
-phone has a problem, such as texts it can't read, the page shows it in one line under the header, and calls still upload.
-That line holds no names, numbers or counts. The app's screen shows the last result in full, including how many work
-calls it skipped for being another kind, such as voicemail.
-
-## Checking the app
-
-`python3 tools/emulator_check.py` builds a test copy of the app, runs it on the Android emulator with made-up contacts,
-calls and texts against a test server on the same computer, and prints a pass or fail line for each thing it checks. It
-takes several minutes and stops the emulator and the server when it is done.
+The first time the app opens it says what it does and what it reads, then asks Android for three permissions: the call
+log, texts and contacts. Then it lists your contacts so you can tick the people whose calls and texts should count, and
+asks the day your current pay period started, on a calendar. That step can be skipped; with no pay period set, its row
+stays hidden until you set one in Options. The page can be shown again from Options.
 
 ## What counts
 
-- A message in a group counts if the group includes at least one `-Work` contact, so a mixed group can count personal
-  messages. Ignore those on the page. A chat of you, one `-Work` contact and one other person shows under that contact's name.
-- Only calls that connected count toward time and the call count.
-- It reads Android's shared SMS and MMS tables. A messaging app that keeps messages only in its own storage can't be seen.
-- Apps such as WhatsApp and Signal aren't included.
-- Calls the phone has already dropped from its log can't be recovered.
+- Only the people you tick count. Unticking someone keeps what was already counted, and a person removed from your
+  contacts keeps counting under the name the app knew.
+- Only calls that connected count toward call time and the number of calls. Missed and declined calls are listed but
+  never counted.
+- A group message counts if the group includes at least one ticked person, so a mixed group can count personal
+  messages. Ignore those in the day view. A chat of you, one ticked person and one other person shows under that
+  person's name.
 - Two messages in one conversation, in the same direction, in the same second count as one.
-- A group is known by its conversation on the phone. After moving to a new phone or restoring messages, its history may upload again as a new group.
+- The app reads when a call or text happened, who it was with, its direction and a call's length. It never reads what a
+  text says.
 
-## Tests
+## Limits
 
-`python -m unittest discover -s tests`
+- The app can only count what Android lets it see. It reads Android's shared call log and SMS and MMS tables. Whether
+  RCS chats and group messages are there depends on the phone and its messaging app.
+- WhatsApp, Signal and other apps that keep their own messages aren't included.
+- Calls the phone has already dropped from its call log can't be recovered, and texts only go back as far as the phone
+  keeps them.
+- A group is known by its conversation on the phone. After moving to a new phone or restoring messages, its history may
+  come in again as a new group.
+- In this version the record is on the phone only, with no backup. Uninstalling the app, clearing its data or losing the
+  phone loses the record.
+
+## Building it
+
+`sh android/app/build.sh` builds the app with plain Android tools, no Gradle, from a folder of tools and the signing key
+kept outside the repository (see that file for what it expects). Every update must be signed with the same key, or it
+can only be installed by uninstalling the old app first, which erases the record.
+
+## Installing it on a phone
+
+1. Download the built `calltally.apk` to the phone and open it. Allow installing from that source if Android asks.
+2. To update, install the new file over the app already there. The record stays.
+3. Open Call Tally and follow the first start. If Android won't offer a permission, open App info for Call Tally, tap the
+   three-dot menu, choose "Allow restricted settings", then allow it under Permissions.
+4. For runs in the background, set the app's battery use to unrestricted and turn off "remove permissions if app is
+   unused".
+
+The app reads the phone shortly after a call or text, about every 15 minutes, and whenever it is opened. The header shows
+when it last did.
+
+Updating over 0.6.0 or earlier, the app that uploaded to a server, starts fresh: the first-start page shows, the old
+app's files are deleted, and the record is built from what the phone holds.
+
+## Checking it
+
+`python -m unittest discover -s tests` runs the unit tests.
+
+`python3 tools/emulator_check.py` builds a test copy of the app, runs it on the Android emulator with made-up contacts,
+calls and texts, goes through the first start, and checks the record the app keeps and its screens. It prints a pass or
+fail line for each thing it checks, takes several minutes, and stops the emulator when it is done.
+
+`calltally.py`, `calltally.html` and `deploy/` are the server and page of the uploading versions. The app no longer uses
+them; they will be retired in a later release.
 
 These records are a personal aid and may be incomplete. Check them before relying on them for pay or billing.

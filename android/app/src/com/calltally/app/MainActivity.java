@@ -47,6 +47,8 @@ public class MainActivity extends Screen {
     private boolean periodFollow = true;
 
     private TextView updated;
+    private LinearLayout damagedBox;
+    private TextView damaged;
     private TextView problem;
     private TextView empty;
     private Button prev;
@@ -91,6 +93,12 @@ public class MainActivity extends Screen {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        if (!StartActivity.done(this)) {
+            // A fresh install, an update over the uploading app, or cleared data: the first-start page comes first.
+            startActivity(new Intent(this, StartActivity.class));
+            finish();
+            return;
+        }
         today = LocalDate.now();
         thisMonth = YearMonth.from(today);
         view = thisMonth;
@@ -109,10 +117,39 @@ public class MainActivity extends Screen {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(edge), dp(12), dp(edge), dp(12));
-        problem = problemBox();
-        problem.setId(R.id.problem);
+        // The damaged-record note stays until OK is tapped, apart from the run's own problems below it.
+        damagedBox = new LinearLayout(this);
+        damagedBox.setOrientation(LinearLayout.VERTICAL);
+        damagedBox.setBackground(shape(lossTint, loss, 1, 10));
+        damagedBox.setPadding(dp(12), dp(8), dp(12), dp(8));
+        damagedBox.setVisibility(View.GONE);
+        damaged = text("", 14, loss, false);
+        damaged.setId(R.id.damaged);
+        damagedBox.addView(damaged, wide());
+        Button ok = button("OK");
+        ok.setId(R.id.damaged_ok);
+        ok.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                damagedBox.setVisibility(View.GONE);
+                final Context context = getApplicationContext();
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Sync.clearDamaged(context);
+                    }
+                }).start();
+            }
+        });
+        LinearLayout.LayoutParams okGap = new LinearLayout.LayoutParams(dp(88), ViewGroup.LayoutParams.WRAP_CONTENT);
+        okGap.topMargin = dp(8);
+        okGap.gravity = Gravity.END;
+        damagedBox.addView(ok, okGap);
         LinearLayout.LayoutParams gapBelow = wide();
         gapBelow.bottomMargin = dp(10);
+        column.addView(damagedBox, gapBelow);
+        problem = problemBox();
+        problem.setId(R.id.problem);
         column.addView(problem, gapBelow);
         empty = text("No work calls or texts yet.", 14, muted, false);
         empty.setGravity(Gravity.CENTER);
@@ -254,6 +291,7 @@ public class MainActivity extends Screen {
     @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
+        if (view == null) return;
         out.putString("view", view.toString());
         out.putBoolean("periodFollow", periodFollow);
         out.putLong("periodK", periodK);
@@ -322,8 +360,9 @@ public class MainActivity extends Screen {
         permissionText = null;
         if (Sync.allowed(this)) {
             Sync.schedule(this);
-            // Covers access granted in Settings, where the permission dialog's answer never arrives.
-            if (Sync.neverRun(this)) start();
+            // Opening the app reads the phone at once, unless a run started in the last two minutes; this also covers
+            // access granted in Settings, where the permission dialog's answer never arrives.
+            if (Sync.sinceLastRun(this) > 2 * 60 * 1000L) start();
         } else {
             permissionText = "This app needs your call log, SMS and contacts. If Android won't offer them, open App info"
                 + " for Call Tally, tap the three-dot menu, choose Allow restricted settings, and come back.";
@@ -339,6 +378,7 @@ public class MainActivity extends Screen {
     @Override
     protected void onPause() {
         super.onPause();
+        if (view == null) return;
         Sync.preferences(this).unregisterOnSharedPreferenceChangeListener(runs);
         handler.removeCallbacks(minute);
     }
@@ -420,7 +460,7 @@ public class MainActivity extends Screen {
         LinearLayout cell = new LinearLayout(this);
         cell.setId(R.id.day_cell);
         cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setPadding(dp(narrow ? 2 : 4), dp(4), dp(narrow ? 1 : 3), dp(4));
+        cell.setPadding(dp(narrow ? 2 : 4), dp(3), dp(narrow ? 1 : 3), dp(2));
         TextView number = text(String.valueOf(date.getDayOfMonth()), 13, muted, false);
         FitText time = new FitText(this, 14);
         time.setTextColor(txt);
@@ -572,6 +612,9 @@ public class MainActivity extends Screen {
             redraw();
             return;
         }
+        String note = Sync.damaged(this);
+        damaged.setText(note == null ? "" : note);
+        damagedBox.setVisibility(note == null ? View.GONE : View.VISIBLE);
         String trouble = found.problem != null ? found.problem : permissionText != null ? permissionText : Sync.problem(this);
         problem.setText(trouble == null ? "" : trouble);
         problem.setVisibility(trouble == null ? View.GONE : View.VISIBLE);

@@ -26,8 +26,7 @@ final class Sql {
         // Version 2: how each conversation of more than one person was first filed, a chat under one number or a group
         // (thread-N), kept so a change of ticks never files its texts a second time under another identity.
         "CREATE TABLE IF NOT EXISTS conversations(thread INTEGER PRIMARY KEY, number TEXT NOT NULL, contact TEXT NOT NULL)",
-        "INSERT OR IGNORE INTO settings(key,value) VALUES('pay_period_start','2026-10-25')",
-        "INSERT OR IGNORE INTO settings(key,value) VALUES('pay_period_days','14')",
+        // No pay period until one is picked at first start or in Options; until then its row stays hidden.
     };
 
     // Only a call that connected counts. Phones can log ringing time on a missed call, so its length means nothing.

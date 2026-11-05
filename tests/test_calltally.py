@@ -575,8 +575,8 @@ class AndroidRulesTests(ServerCase):
                                      server.execute(f"PRAGMA index_info({index})").fetchall())
             finally:
                 server.close()
-            self.assertEqual(dict(app.execute("SELECT key,value FROM settings")),
-                             {"pay_period_start": "2026-10-25", "pay_period_days": "14"})
+            # No pay period until the first start or Options sets one, so its row stays hidden.
+            self.assertEqual(dict(app.execute("SELECT key,value FROM settings")), {})
             self.assertEqual([r[1] for r in app.execute("PRAGMA table_info(people)")],
                              ["key", "name", "ticked", "on_phone", "first_ticked_at"])
             self.assertEqual([r[1] for r in app.execute("PRAGMA table_info(numbers)")], ["person_key", "number", "number_key"])
