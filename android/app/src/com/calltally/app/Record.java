@@ -420,4 +420,9 @@ final class Record {
         values.put("value", value);
         db().insertWithOnConflict("settings", null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
+
+    /** Removes a setting, so it reads as never set. */
+    void clearSetting(String key) {
+        db().delete("settings", "key=?", new String[] {key});
+    }
 }

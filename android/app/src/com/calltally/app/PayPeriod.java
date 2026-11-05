@@ -45,9 +45,19 @@ final class PayPeriod {
 
     /** "Pay period Oct 25 – Nov 7", with years when it isn't all in this year. */
     String label(long k, LocalDate today) {
+        return "Pay period " + dates(k, today);
+    }
+
+    /** "Oct 25 – Nov 7": the label's dates alone. */
+    String dates(long k, LocalDate today) {
         LocalDate from = first(k), to = last(k);
         boolean showYear = from.getYear() != today.getYear() || to.getYear() != today.getYear();
-        return "Pay period " + Words.shortDay(from, showYear && from.getYear() != to.getYear()) + " – " + Words.shortDay(to, showYear);
+        return Words.shortDay(from, showYear && from.getYear() != to.getYear()) + " – " + Words.shortDay(to, showYear);
+    }
+
+    /** The dates of the period holding today: "Oct 25 – Nov 7". */
+    String current(LocalDate today) {
+        return dates(index(today), today);
     }
 
     /** "Pay periods start Sun Oct 25 and run two weeks" */

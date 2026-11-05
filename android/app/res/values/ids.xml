@@ -60,6 +60,8 @@
     <item type="id" name="who_next" />
     <item type="id" name="pay_question" />
     <item type="id" name="pay_skip" />
+    <item type="id" name="pay_reset" />
+    <item type="id" name="period_preview" />
     <item type="id" name="damaged" />
     <item type="id" name="damaged_ok" />
 </resources>

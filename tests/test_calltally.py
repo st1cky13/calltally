@@ -482,6 +482,8 @@ class AndroidRulesTests(ServerCase):
         self.assertEqual(rules["pay-now"], "0 2026-10-25 2026-11-07 | Pay period Oct 25 – Nov 7")
         self.assertEqual(rules["pay-next"], "Pay period Nov 8 – Nov 21 | Pay period Jan 3 – Jan 16, 2027 | Pay period Aug 31 – Sep 13, 2025")
         self.assertEqual(rules["pay-before"], "-1 2026-10-11 2026-10-24")
+        # The current period's dates, as the pay period screen previews them: a start on a period boundary gives the same.
+        self.assertEqual(rules["pay-current"], "Oct 25 – Nov 7 | Oct 25 – Nov 7 | Oct 24 – Nov 6 | Dec 27, 2026 – Jan 9, 2027")
         self.assertEqual(rules["pay-describe"], "Pay periods start Sun Oct 25 and run two weeks | Pay periods start Sun Jan 3, 2027 and run one week")
         self.assertEqual(rules["pay-bad"], "null null null null")
 
