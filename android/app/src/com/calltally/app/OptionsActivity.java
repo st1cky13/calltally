@@ -64,6 +64,9 @@ public class OptionsActivity extends Screen {
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(edge(), dp(4), edge(), dp(16));
+        // Quiet buttons hang into the side padding, so their ripple and touch area are not cut off.
+        column.setClipChildren(false);
+        column.setClipToPadding(false);
 
         heading("Contacts");
         whoLine = muted("");
@@ -672,7 +675,7 @@ public class OptionsActivity extends Screen {
     /** A quiet button on its own line, its word lined up with the text above: the button's own padding hangs past it. */
     private LinearLayout.LayoutParams flushStart(Button button) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMarginStart(-button.getPaddingStart());
+        params.setMarginStart(-hang());
         return params;
     }
 
@@ -699,13 +702,20 @@ public class OptionsActivity extends Screen {
         enable(button, button.isEnabled());
         LinearLayout row = row();
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
         row.addView(words, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout.LayoutParams side = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         side.leftMargin = dp(10);
         // The button's own padding hangs past the edge.
-        side.setMarginEnd(-button.getPaddingEnd());
+        side.setMarginEnd(-hang());
         row.addView(button, side);
         column.addView(row, wide());
+    }
+
+    /** How far a quiet button's padding hangs past the text edge: never past the screen edge on narrow phones. */
+    private int hang() {
+        return Math.min(dp(12), edge());
     }
 
     private LinearLayout.LayoutParams third(int i) {

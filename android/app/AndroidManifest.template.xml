@@ -26,7 +26,7 @@
         <activity android:name=".ContactsActivity" android:exported="false" />
         <activity android:name=".OptionsActivity" android:exported="false" android:label="Options" />
         <activity android:name=".PayActivity" android:exported="false" android:label="Pay periods" />
-        <activity android:name=".WhoActivity" android:exported="false" android:label="Who counts" />
+        <activity android:name=".WhoActivity" android:exported="false" android:label="Contacts" />
         <activity android:name=".PhoneCheckActivity" android:exported="false" android:label="Phone check" />
         <activity android:name=".CatchUpActivity" android:exported="false" android:label="Catch up encrypted" />
         <service android:name=".SyncJob" android:exported="true"
