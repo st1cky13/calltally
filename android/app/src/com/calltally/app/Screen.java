@@ -338,12 +338,17 @@ abstract class Screen extends Activity {
      * times form a column. Set its padding first.
      */
     void timeColumn(TextView view) {
+        timeColumn(view, "0h 00m 00s");
+    }
+
+    /** The same, as wide as this sample: the longest time the list holds, so a list of short times keeps a narrow column. */
+    void timeColumn(TextView view, String sample) {
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         view.setTypeface(medium());
         figures(view);
         view.setGravity(Gravity.END);
         view.setSingleLine(true);
-        int widest = (int) Math.ceil(view.getPaint().measureText("0h 00m 00s"));
+        int widest = (int) Math.ceil(view.getPaint().measureText(sample));
         view.setMinWidth(widest + view.getPaddingLeft() + view.getPaddingRight());
     }
 

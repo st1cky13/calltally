@@ -24,6 +24,8 @@ public class DayActivity extends Screen {
     private List<Record.Item> items = new ArrayList<>();
     private boolean hide;
     private int asking;
+    /** The day's longest call time, so the time column is only as wide as this day needs. */
+    private String widest = "0s";
     private TextView total;
     private TextView line;
     private Button calls;
@@ -145,12 +147,14 @@ public class DayActivity extends Screen {
                     public void run() {
                         if (mine != asking || isDestroyed()) return;
                         if (trouble != null) {
-                            total.setText("");
+                            total.setVisibility(View.GONE);
                             line.setText(trouble);
                             return;
                         }
                         items = found;
                         hide = hideIt;
+                        widest = widest(found);
+                        total.setVisibility(View.VISIBLE);
                         total.setText(Words.fullTime(sums == null ? 0 : sums.callS));
                         line.setText(sums == null ? Words.summary(0, 0, 0) : Words.summary(sums.callS, sums.calls, sums.texts));
                         if (tab == null) {
@@ -163,6 +167,18 @@ public class DayActivity extends Screen {
                 });
             }
         }).start();
+    }
+
+    /** The longest time among the day's connected calls, as shown, or "0s" when there is none. */
+    private static String widest(List<Record.Item> found) {
+        String longest = "0s";
+        if (found == null) return longest;
+        for (Record.Item item : found) {
+            if (!Words.connected(item.kind, item.direction, item.durationS)) continue;
+            String time = Words.fullTime(item.durationS);
+            if (time.length() > longest.length()) longest = time;
+        }
+        return longest;
     }
 
     private boolean has(String kind) {
@@ -208,7 +224,7 @@ public class DayActivity extends Screen {
         boolean gone = item.ignoredAt != null;
         LinearLayout row = row();
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(16), dp(8), dp(12), dp(8));
+        row.setPadding(dp(16), dp(8), dp(4), dp(8));
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
         TextView who = text(item.contact, 15, txt, false);
@@ -218,8 +234,9 @@ public class DayActivity extends Screen {
         info.addView(what);
         row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView length = text(Words.connected(item.kind, item.direction, item.durationS) ? Words.fullTime(item.durationS) : "", 15, txt, false);
-        length.setPadding(dp(8), 0, dp(10), 0);
-        timeColumn(length);
+        // No gap on its right: the action's own margin is the gap.
+        length.setPadding(dp(8), 0, 0, 0);
+        timeColumn(length, widest);
         row.addView(length);
         if (gone) {
             for (TextView view : new TextView[] {who, what, length}) {
@@ -227,10 +244,15 @@ public class DayActivity extends Screen {
                 view.setAlpha(0.55f);
             }
         }
-        // Quiet, so the names and times lead; its own colour, width and ripple still say it can be tapped.
+        // Ignore is quiet and muted, so the names and times lead. Restore, the one action on a dimmed row, is in the accent.
         final Button action = button(gone ? "Restore" : "Ignore");
         action.setId(R.id.entry_action);
-        quietMuted(action);
+        if (gone) {
+            quiet(action);
+            action.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        } else {
+            quietMuted(action);
+        }
         action.setMinHeight(dp(44));
         action.setMinimumHeight(dp(44));
         action.setMinWidth(dp(64));

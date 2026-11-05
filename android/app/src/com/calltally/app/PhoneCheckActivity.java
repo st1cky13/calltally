@@ -64,6 +64,7 @@ public class PhoneCheckActivity extends Screen {
 
         share = button("Share");
         share.setId(R.id.phone_share);
+        filled(share);
         enable(share, false);
         share.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -89,7 +90,8 @@ public class PhoneCheckActivity extends Screen {
                 finish();
             }
         });
-        footer = footer(share, close);
+        // Close quiet on the left, Share, the way forward, filled on the right.
+        footer = footer(close, share);
         frame("Phone check", scroll, false);
         load();
     }
