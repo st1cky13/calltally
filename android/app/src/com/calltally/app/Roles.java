@@ -28,6 +28,22 @@ final class Roles {
     }
 
     /**
+     * The messaging app to send the owner back to after a catch-up: the one that is the default now, read just before Call
+     * Tally asks for the role. The documented lookup returns nothing on some phones (the owner's), so it falls back to the
+     * secure setting Settings writes. Returns a package name, or null when none can be read or it names Call Tally itself,
+     * in which case the caller keeps the old Google Messages hand-back.
+     */
+    static String previousMessaging(Context context) {
+        String self = context.getPackageName();
+        String pkg = defaultMessaging(context);
+        if (pkg == null || pkg.isEmpty() || pkg.equals(self)) {
+            pkg = secureDefault(context);
+        }
+        if (pkg == null || pkg.isEmpty() || pkg.equals(self)) return null;
+        return pkg;
+    }
+
+    /**
      * True while Call Tally is the phone's messaging app. Three signals are tried in turn, and any one saying yes is
      * enough, because on some phones (the owner's Samsung) Settings shows Call Tally as the SMS app but one signal still
      * disagrees. Each is guarded on its own so a failing one can't throw: the canonical role check first, then the
@@ -115,5 +131,29 @@ final class Roles {
         Intent settings = new Intent(Settings.ACTION_SETTINGS);
         if (settings.resolveActivity(context.getPackageManager()) != null) return settings;
         return null;
+    }
+
+    /**
+     * Where "Switch back" should send the owner: the messaging app they used before Call Tally took the role, when we know
+     * it and it can still be opened, otherwise the old hand-back that opens Google Messages or a Settings screen. prev is
+     * the remembered package, or null. It only ever opens an app or a Settings screen; the owner still approves the role
+     * change there, as before.
+     */
+    static Intent handBackIntent(Context context, String prev) {
+        Intent launch = launchIntentFor(context, prev);
+        if (Passthrough.handBackTarget(prev, launch != null, context.getPackageName()) != null) {
+            return launch;
+        }
+        return restoreMessagingIntent(context);
+    }
+
+    /** The intent that opens a named app's own screen, or null when the package is missing, empty or has nothing to open. */
+    static Intent launchIntentFor(Context context, String pkg) {
+        if (pkg == null || pkg.isEmpty()) return null;
+        try {
+            return context.getPackageManager().getLaunchIntentForPackage(pkg);
+        } catch (RuntimeException error) {
+            return null;
+        }
     }
 }

@@ -15,7 +15,7 @@ import java.util.Locale;
 /**
  * Catch up encrypted: reads the encrypted chats the phone only lets its messaging app see. It asks the owner to make
  * Call Tally the messaging app for a moment (an Android dialog they approve), reads once, then asks them to switch back
- * to Google Messages (another dialog they approve). When Call Tally is already the messaging app, because the owner set
+ * to their own messaging app (another dialog they approve). When Call Tally is already the messaging app, because the owner set
  * it in Settings where the in-app dialog is blocked, Continue reads straight away with no request. It never sends a
  * message, and while it holds the role it says so plainly, here and on the month screen, with a way to switch back.
  */
@@ -92,7 +92,7 @@ public class CatchUpActivity extends Screen {
         holdGap.topMargin = dp(16);
         column.addView(holding, holdGap);
 
-        switchBack = button("Switch back to Messages");
+        switchBack = button("Switch back");
         switchBack.setId(R.id.switch_back);
         switchBack.setVisibility(View.GONE);
         switchBack.setOnClickListener(new View.OnClickListener() {
@@ -166,7 +166,7 @@ public class CatchUpActivity extends Screen {
             readThenHandBack();
             return;
         }
-        Sync.preferences(this).edit().putString("prev_sms", Roles.defaultMessaging(this)).commit();
+        Sync.preferences(this).edit().putString("prev_sms", Roles.previousMessaging(this)).commit();
         try {
             startActivityForResult(Roles.requestIntent(this), BECOME);
         } catch (RuntimeException error) {
@@ -228,7 +228,7 @@ public class CatchUpActivity extends Screen {
                         enable(go, true);
                         result.setText(Passthrough.readResult(total, added) + "\n" + Sync.status(context));
                         refresh();
-                        // Immediately ask the owner to make Google Messages the messaging app again.
+                        // Immediately ask the owner to switch back to their own messaging app.
                         handBack(HAND_BACK);
                     }
                 });
@@ -247,12 +247,13 @@ public class CatchUpActivity extends Screen {
     }
 
     /**
-     * Hands control back to the owner to make Google Messages the default messaging app again: opens Google Messages,
-     * which then offers to become the default, or a Settings screen where the owner picks it. It never changes the
-     * default itself. On return, onResume/refresh re-reads the role and hides the "still the messaging app" box.
+     * Hands control back to the owner to make their own messaging app the default again: opens the app that was the
+     * default before Call Tally took the role, which then offers to become the default again; or, when that app is not
+     * known, opens Google Messages or a Settings screen where the owner picks it. It never changes the default itself. On
+     * return, onResume/refresh re-reads the role and hides the "still the messaging app" box.
      */
     private void handBack(int code) {
-        Intent intent = Roles.restoreMessagingIntent(this);
+        Intent intent = Roles.handBackIntent(this, Sync.preferences(this).getString("prev_sms", null));
         if (intent == null) {
             refresh();
             return;

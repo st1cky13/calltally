@@ -31,11 +31,11 @@ final class Passthrough {
 
     static final String EXPLANATION =
         "Encrypted chats can only be read by the phone's messaging app. Call Tally will ask to be that app for a moment, "
-        + "read them, then ask you to switch back to Google Messages. Texts that arrive meanwhile are kept.";
+        + "read them, then ask you to switch back to your messaging app. Texts that arrive meanwhile are kept.";
     /** The persistent line shown in Options and the month screen while Call Tally still holds the messaging role. */
     static final String HOLDS_ROLE =
-        "Call Tally is still the phone's messaging app. Open Options to switch it back to Google Messages.";
-    static final String DONE_BACK = "Google Messages is your messaging app again.";
+        "Call Tally is still the phone's messaging app. Open Options to switch back to your messaging app.";
+    static final String DONE_BACK = "You're back to your messaging app.";
     static final String REFUSED = "The messaging app wasn't changed, so nothing was read.";
     static final String PICTURE_MISSING =
         "A picture message arrived while catching up and may be missing from Messages.";
@@ -71,6 +71,20 @@ final class Passthrough {
         if (added <= 0) return "No new calls or texts.";
         if (added == 1) return "1 new call or text added.";
         return added + " new calls and texts added.";
+    }
+
+    /**
+     * Where "Switch back" sends the owner after a catch-up: the messaging app that was the default before Call Tally took
+     * the role, so they land back in their own app. prev is the remembered package, or null when none was recorded;
+     * launchable says whether that package is installed and still has a screen to open; self is Call Tally's own package,
+     * which is never somewhere to send them. Returns the package to open, or null to tell the caller to fall back to the
+     * old way of opening Google Messages or a Settings screen.
+     */
+    static String handBackTarget(String prev, boolean launchable, String self) {
+        if (prev == null || prev.isEmpty()) return null;
+        if (prev.equals(self)) return null;
+        if (!launchable) return null;
+        return prev;
     }
 
     /** "Last caught up: Oct 26, 12:33 AM", or "Not yet" when it has not happened. at is in milliseconds, or 0. */

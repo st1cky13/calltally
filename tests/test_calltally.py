@@ -184,6 +184,9 @@ class AndroidRulesTests(RecordCase):
         self.assertEqual(rules["passthrough-sub"], "3 false")
         self.assertEqual(rules["passthrough-added"], "No new calls or texts. | 1 new call or text added. | 5 new calls and texts added.")
         self.assertEqual(rules["passthrough-last"], "Not yet | Last caught up: Oct 26, 12:33 AM")
+        # Switch back opens the known, launchable previous messaging app; a missing or not-launchable one, an empty or
+        # unknown setting, and Call Tally itself all fall back to the old Google Messages hand-back (null).
+        self.assertEqual(rules["passthrough-handback"], "com.other.sms | null | null | null | null")
 
     def test_catch_up_result_wording(self):
         # The read result names the total found and the number new, so a "0 new" is not read as a failure. No parentheses.

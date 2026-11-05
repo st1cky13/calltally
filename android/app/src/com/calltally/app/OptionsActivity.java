@@ -395,15 +395,16 @@ public class OptionsActivity extends Screen {
         LinearLayout.LayoutParams stillGap = wide();
         stillGap.topMargin = dp(8);
         column.addView(stillBox, stillGap);
-        switchBack = button("Switch back to Messages");
+        switchBack = button("Switch back");
         switchBack.setId(R.id.switch_back);
         switchBack.setVisibility(View.GONE);
         switchBack.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Opens Google Messages (which then offers to become the default) or a Settings screen where the owner
-                // picks it. It never changes the default itself; onResume/load re-reads the role when we return.
-                Intent intent = Roles.restoreMessagingIntent(OptionsActivity.this);
+                // Opens the app that was the default before Call Tally took the role (which then offers to become the
+                // default again), or, when it isn't known, Google Messages or a Settings screen where the owner picks it.
+                // It never changes the default itself; onResume/load re-reads the role when we return.
+                Intent intent = Roles.handBackIntent(OptionsActivity.this, Sync.preferences(OptionsActivity.this).getString("prev_sms", null));
                 if (intent == null) {
                     load();
                     return;

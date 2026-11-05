@@ -57,6 +57,13 @@ public class RulesCheck {
         System.out.println("passthrough-added " + Passthrough.added(0) + " | " + Passthrough.added(1) + " | " + Passthrough.added(5));
         System.out.println("passthrough-result " + Passthrough.readResult(0, 0) + " | " + Passthrough.readResult(12, 3));
         System.out.println("passthrough-last " + Passthrough.lastCaughtUp(0, Locale.US) + " | " + Passthrough.lastCaughtUp(1793000000000L, Locale.US));
+        // Where "Switch back" goes: a known, launchable previous app is opened; a missing or not-launchable one, an empty
+        // or unknown setting, or Call Tally itself all fall back to the old Google Messages hand-back (null).
+        System.out.println("passthrough-handback " + Passthrough.handBackTarget("com.other.sms", true, "com.calltally.app")
+            + " | " + Passthrough.handBackTarget("com.other.sms", false, "com.calltally.app")
+            + " | " + Passthrough.handBackTarget(null, true, "com.calltally.app")
+            + " | " + Passthrough.handBackTarget("", true, "com.calltally.app")
+            + " | " + Passthrough.handBackTarget("com.calltally.app", true, "com.calltally.app"));
     }
 
     /**
