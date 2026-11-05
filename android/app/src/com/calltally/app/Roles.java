@@ -100,10 +100,20 @@ final class Roles {
             .putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.getPackageName());
     }
 
-    /** The dialog that asks the owner to make Google Messages (the remembered app) the messaging app again. */
-    static Intent handBackIntent(Context context, String previous) {
-        if (previous == null || previous.isEmpty() || previous.equals(context.getPackageName())) previous = GOOGLE_MESSAGES;
-        return new Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
-            .putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, previous);
+    /**
+     * The best way, on this phone, to let the owner make Google Messages the default messaging app again. On Android 10+
+     * an app cannot assign the messaging role to another app, so this never changes the default itself. It opens Google
+     * Messages, which then offers to become the default; or, when that app is not installed, the system default-apps
+     * screen, or plain Settings, so the owner picks it there. Returns the first intent that can be opened, or null when
+     * none can. The owner stays in control: this only ever opens Google Messages or a Settings screen.
+     */
+    static Intent restoreMessagingIntent(Context context) {
+        Intent launch = context.getPackageManager().getLaunchIntentForPackage(GOOGLE_MESSAGES);
+        if (launch != null) return launch;
+        Intent defaults = new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS);
+        if (defaults.resolveActivity(context.getPackageManager()) != null) return defaults;
+        Intent settings = new Intent(Settings.ACTION_SETTINGS);
+        if (settings.resolveActivity(context.getPackageManager()) != null) return settings;
+        return null;
     }
 }

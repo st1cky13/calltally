@@ -1071,7 +1071,12 @@ def main():
             line = text_of(nodes, "catch_result") or ""
             first = line.split("\n")[0]
             check("already the default: Continue reads with no role dialog, not REFUSED, and shows a count",
-                  REFUSED_LINE not in line and (first == "No new calls or texts." or first.endswith("added.")), repr(line))
+                  REFUSED_LINE not in line and first.startswith("Read while Call Tally was the messaging app.")
+                  and "counted," in first and first.endswith("new since the last run."), repr(line))
+            # 0.9.4: the report line stays on the screen after the read, with no new dependency on driving the role.
+            rep = text_of(nodes, "catch_report") or ""
+            check("already the default: the 'Messaging app:' report line is still shown after the read",
+                  rep.startswith("Messaging app:"), repr(rep))
             check("already the default: nothing is lost by catching up, the record still matches",
                   rows(run.record()) == got, f"new {[r for r in rows(run.record()) if r not in got][:2]}")
             # Dismiss any hand-back dialog the read then raised (not drivable here).

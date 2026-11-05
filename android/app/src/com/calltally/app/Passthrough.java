@@ -57,6 +57,15 @@ final class Passthrough {
         return row;
     }
 
+    /**
+     * The plain result of one catch-up: how many calls and texts the record now holds in all, and how many of them were
+     * new since the last run. Worded so that zero new is not read as a failure. No parentheses.
+     */
+    static String readResult(int total, int newSinceLastRun) {
+        return "Read while Call Tally was the messaging app. " + total + " calls and texts counted, "
+            + newSinceLastRun + " new since the last run.";
+    }
+
     /** What the catch-up says it added, in plain words. */
     static String added(int added) {
         if (added <= 0) return "No new calls or texts.";

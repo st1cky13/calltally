@@ -55,6 +55,7 @@ public class RulesCheck {
         Map<String, Object> withSub = Passthrough.inboxRow("+1", "x", 1L, 0L, 7L, 3);
         System.out.println("passthrough-sub " + withSub.get(Passthrough.SUBSCRIPTION_ID) + " " + row.containsKey(Passthrough.SUBSCRIPTION_ID));
         System.out.println("passthrough-added " + Passthrough.added(0) + " | " + Passthrough.added(1) + " | " + Passthrough.added(5));
+        System.out.println("passthrough-result " + Passthrough.readResult(0, 0) + " | " + Passthrough.readResult(12, 3));
         System.out.println("passthrough-last " + Passthrough.lastCaughtUp(0, Locale.US) + " | " + Passthrough.lastCaughtUp(1793000000000L, Locale.US));
     }
 

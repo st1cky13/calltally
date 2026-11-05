@@ -183,6 +183,13 @@ class AndroidRulesTests(RecordCase):
         self.assertEqual(rules["passthrough-added"], "No new calls or texts. | 1 new call or text added. | 5 new calls and texts added.")
         self.assertEqual(rules["passthrough-last"], "Not yet | Last caught up: Oct 26, 12:33 AM")
 
+    def test_catch_up_result_wording(self):
+        # The read result names the total found and the number new, so a "0 new" is not read as a failure. No parentheses.
+        rules = self.run_rules()
+        self.assertEqual(rules["passthrough-result"],
+                         "Read while Call Tally was the messaging app. 0 calls and texts counted, 0 new since the last run."
+                         " | Read while Call Tally was the messaging app. 12 calls and texts counted, 3 new since the last run.")
+
     def test_screen_words(self):
         rules = self.run_rules()
         self.assertEqual(rules["words-clock"], "17:06 1:08:17 0:59 0:00 10:00:00")

@@ -217,7 +217,8 @@ public class CatchUpActivity extends Screen {
             public void run() {
                 int before = entryCount(context);
                 Sync.run(context);
-                final int added = Math.max(0, entryCount(context) - before);
+                final int total = entryCount(context);
+                final int added = Math.max(0, total - before);
                 Sync.preferences(context).edit().putLong("caught_up_at", System.currentTimeMillis()).commit();
                 runOnUiThread(new Runnable() {
                     @Override
@@ -225,7 +226,7 @@ public class CatchUpActivity extends Screen {
                         if (isDestroyed()) return;
                         reading = false;
                         enable(go, true);
-                        result.setText(Passthrough.added(added) + "\n" + Sync.status(context));
+                        result.setText(Passthrough.readResult(total, added) + "\n" + Sync.status(context));
                         refresh();
                         // Immediately ask the owner to make Google Messages the messaging app again.
                         handBack(HAND_BACK);
@@ -245,10 +246,19 @@ public class CatchUpActivity extends Screen {
         }
     }
 
+    /**
+     * Hands control back to the owner to make Google Messages the default messaging app again: opens Google Messages,
+     * which then offers to become the default, or a Settings screen where the owner picks it. It never changes the
+     * default itself. On return, onResume/refresh re-reads the role and hides the "still the messaging app" box.
+     */
     private void handBack(int code) {
-        String previous = Sync.preferences(this).getString("prev_sms", Roles.GOOGLE_MESSAGES);
+        Intent intent = Roles.restoreMessagingIntent(this);
+        if (intent == null) {
+            refresh();
+            return;
+        }
         try {
-            startActivityForResult(Roles.handBackIntent(this, previous), code);
+            startActivityForResult(intent, code);
         } catch (RuntimeException error) {
             refresh();
         }

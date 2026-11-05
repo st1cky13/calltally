@@ -207,9 +207,15 @@ public class OptionsActivity extends Screen {
         switchBack.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String previous = Sync.preferences(OptionsActivity.this).getString("prev_sms", Roles.GOOGLE_MESSAGES);
+                // Opens Google Messages (which then offers to become the default) or a Settings screen where the owner
+                // picks it. It never changes the default itself; onResume/load re-reads the role when we return.
+                Intent intent = Roles.restoreMessagingIntent(OptionsActivity.this);
+                if (intent == null) {
+                    load();
+                    return;
+                }
                 try {
-                    startActivityForResult(Roles.handBackIntent(OptionsActivity.this, previous), SWITCH_BACK);
+                    startActivityForResult(intent, SWITCH_BACK);
                 } catch (RuntimeException error) {
                     load();
                 }
