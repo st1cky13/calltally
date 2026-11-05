@@ -2,9 +2,10 @@
 
 A private calendar of work calls and texts. It opens on the current month, with arrows to move between months. At the
 top are three totals of call time, calls and texts: the month on screen, the pay period, and all time. The pay period has
-its own arrows, and the day pay periods start can be changed. Tap a total to see it by contact. Each day shows its exact
-call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted entries
-stay deleted and can be restored.
+its own arrows. Tap a total to see it by contact. Each day shows its exact
+call time and the number of texts. Click a day to see its entries, and ignore any that shouldn't count. Ignored entries
+stay ignored and can be restored. The gear opens Options: the pay period start, hiding ignored entries in the day view,
+and a light or dark mode with a choice of colour themes, kept in that browser.
 
 The Android app is how uploads happen. It finds calls and texts with contacts whose name ends in `-Work` and uploads them
 soon after they happen, and about every 15 minutes in case one is missed, including history already on the phone. It
@@ -37,7 +38,7 @@ calls it skipped for being another kind, such as voicemail.
 ## What counts
 
 - A message in a group counts if the group includes at least one `-Work` contact, so a mixed group can count personal
-  messages. Delete those on the page. A chat of you, one `-Work` contact and one other person shows under that contact's name.
+  messages. Ignore those on the page. A chat of you, one `-Work` contact and one other person shows under that contact's name.
 - Only calls that connected count toward time and the call count.
 - It reads Android's shared SMS and MMS tables. A messaging app that keeps messages only in its own storage can't be seen.
 - Apps such as WhatsApp and Signal aren't included.

@@ -338,7 +338,7 @@ class SettingsTests(ServerCase):
         self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
 
     def test_health_reports_version(self):
-        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.5.1"})
+        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.5.2"})
 
 
 class StatusTests(ServerCase):

@@ -11,19 +11,36 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f6b5c'/%3E%3Ctext x='9' y='22' font-family='monospace' font-weight='700' font-size='16' fill='%23fff'%3Ec%3C/text%3E%3C/svg%3E">
 <style>
   :root{--bg:#f4f7f6;--card:#fff;--card2:#eef3f2;--line:#dde6e4;--line2:#c4d3d0;--txt:#14201e;--muted:#46585a;
-    --accent:#0f6b5c;--accent-ink:#fff;--tint:rgba(15,107,92,.09);--loss:#c23a3a;--loss-t:rgba(194,58,58,.10);
+    --accent:var(--al);--accent-ink:var(--il);--tint:var(--tl);--loss:#c23a3a;--loss-t:rgba(194,58,58,.10);
     --scrim:rgba(10,20,18,.45);--shadow:0 14px 40px rgba(10,40,35,.18);color-scheme:light;
     --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
     --sab:env(safe-area-inset-bottom,0px)}
-  @media (prefers-color-scheme: dark){:root{--bg:#0c1312;--card:#14201e;--card2:#1a2826;--line:#24342f;--line2:#33483f;
-    --txt:#e6f0ed;--muted:#a5b8b3;--accent:#4fd1b5;--accent-ink:#04211b;--tint:rgba(79,209,181,.12);--loss:#ff7b7b;--loss-t:rgba(255,123,123,.12);
-    --scrim:rgba(0,0,0,.6);--shadow:0 18px 50px rgba(0,0,0,.5);color-scheme:dark}}
+  /* Colour themes: the accent, its ink and the tint, for light (l) and dark (d). Teal is the default. */
+  :root,.sw[data-t="teal"]{--al:#0f6b5c;--il:#fff;--tl:rgba(15,107,92,.09);--ad:#4fd1b5;--id:#04211b;--td:rgba(79,209,181,.12)}
+  :root[data-theme="blue"],.sw[data-t="blue"]{--al:#1f5fae;--il:#fff;--tl:rgba(31,95,174,.09);--ad:#7ab4ff;--id:#061a33;--td:rgba(122,180,255,.12)}
+  :root[data-theme="plum"],.sw[data-t="plum"]{--al:#7a3b84;--il:#fff;--tl:rgba(122,59,132,.09);--ad:#d9a0e3;--id:#2a0d30;--td:rgba(217,160,227,.12)}
+  :root[data-theme="amber"],.sw[data-t="amber"]{--al:#8a5300;--il:#fff;--tl:rgba(138,83,0,.09);--ad:#f2b544;--id:#2b1a00;--td:rgba(242,181,68,.12)}
+  :root[data-theme="slate"],.sw[data-t="slate"]{--al:#3d5366;--il:#fff;--tl:rgba(61,83,102,.09);--ad:#a9bccd;--id:#111c26;--td:rgba(169,188,205,.12)}
+  .sw{background:var(--al)}
+  /* Dark: chosen in Options, or System when the device is dark. */
+  :root[data-mode="dark"]{--bg:#0c1312;--card:#14201e;--card2:#1a2826;--line:#24342f;--line2:#33483f;
+    --txt:#e6f0ed;--muted:#a5b8b3;--accent:var(--ad);--accent-ink:var(--id);--tint:var(--td);--loss:#ff7b7b;--loss-t:rgba(255,123,123,.12);
+    --scrim:rgba(0,0,0,.6);--shadow:0 18px 50px rgba(0,0,0,.5);color-scheme:dark}
+  :root[data-mode="dark"] .sw{background:var(--ad)}
+  @media (prefers-color-scheme: dark){:root:not([data-mode="light"]){--bg:#0c1312;--card:#14201e;--card2:#1a2826;--line:#24342f;--line2:#33483f;
+    --txt:#e6f0ed;--muted:#a5b8b3;--accent:var(--ad);--accent-ink:var(--id);--tint:var(--td);--loss:#ff7b7b;--loss-t:rgba(255,123,123,.12);
+    --scrim:rgba(0,0,0,.6);--shadow:0 18px 50px rgba(0,0,0,.5);color-scheme:dark}
+    :root:not([data-mode="light"]) .sw{background:var(--ad)}}
   *{box-sizing:border-box} [hidden]{display:none!important}
   html{-webkit-text-size-adjust:100%;background:var(--bg)}
   body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 var(--body);overflow-x:hidden}
   header{position:sticky;top:0;z-index:5;background:var(--accent);color:var(--accent-ink);padding:10px 16px;display:flex;align-items:center;gap:10px}
   header b{font-size:16px;letter-spacing:.02em}
   #updated{margin-left:auto;font-size:14px;border-radius:20px;padding:2px 10px;white-space:nowrap}
+  #gear{appearance:none;background:none;border:0;color:inherit;width:40px;height:40px;margin:-8px -10px -8px -4px;padding:0;
+    display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;flex:none}
+  #gear svg{width:22px;height:22px}
+  #gear:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-2px}
   #updated.stale{background:#f3c25a;color:#2b1d00;font-weight:600}
   #updated.late{background:#c23a3a;color:#fff;font-weight:600}
   main{max-width:900px;margin:0 auto;padding:12px 16px calc(40px + var(--sab));display:grid;gap:14px}
@@ -44,29 +61,27 @@
   .total .val span{white-space:nowrap}
   .period{display:flex;gap:6px;align-items:stretch}
   .period .btn{width:40px;min-height:42px;padding:0;font-size:16px;font-weight:700;flex:none}
-  .note{margin:0;color:var(--muted);font-size:11.5px;line-height:1.3;display:flex;align-items:center;justify-content:space-between;gap:4px}
-  .note .btn{font-size:12px;min-height:40px;padding:2px 8px;flex:none}
-  @media (min-width:640px){.note{font-size:12px}}
   .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
   .grid{grid-auto-rows:1fr}
   .week{margin-bottom:3px;color:var(--muted);font-size:11px;text-align:center}
   .day{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--card2);border:1px solid transparent;border-radius:8px;
-    min-height:54px;padding:3px;display:flex;flex-direction:column;gap:0;min-width:0;overflow:hidden;line-height:1.2}
-  .day .n{font-size:11px;color:var(--muted)}
-  .day .t{font:600 12px/1.2 var(--body);font-variant-numeric:tabular-nums;white-space:nowrap}
+    min-height:86px;padding:4px 3px;display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden;line-height:1.2}
+  .day .n{font-size:13px;color:var(--muted)}
+  .day .t{font:600 14px/1.2 var(--body);font-variant-numeric:tabular-nums;white-space:nowrap}
   .day .t .wide{display:none}
-  .day .x{font-size:11px;line-height:1.2;color:var(--muted)}
+  @media (max-width:639px){.day .x.small{font-size:11px}}
+  .day .x{font-size:12.5px;line-height:1.2;color:var(--muted)}
   .day.filled{background:var(--tint);border-color:var(--line2);cursor:pointer}
   .day.filled:hover{border-color:var(--accent)}
   .day:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-  .day.today{border-color:var(--accent);border-width:2px;padding:2px}
+  .day.today{border-color:var(--accent);border-width:2px;padding:3px 2px}
   .day.today .n{color:var(--accent);font-weight:700}
   .day.future{opacity:.45}
-  .gap{min-height:54px}
-  @media (min-width:640px){.day,.gap{min-height:68px}.day{padding:6px;gap:1px}.day.today{padding:5px}.day .n{font-size:12px}.day .t{font-size:13px}.day .x{font-size:12px}}
-  @media (min-width:800px){.day .t .wide{display:inline}.day .t .narrow{display:none}}
+  .gap{min-height:86px}
+  @media (min-width:640px){.day,.gap{min-height:96px}.day{padding:7px;gap:3px}.day.today{padding:6px}.day .n{font-size:14px}.day .t{font-size:15px}.day .x{font-size:13.5px}}
+  @media (min-width:800px){main{max-width:1040px}.day,.gap{min-height:104px}.day .t .wide{display:inline}.day .t .narrow{display:none}}
   @media (max-width:639px){.day.long{padding-left:2px;padding-right:2px}.day.today.long{padding-left:1px;padding-right:1px}
-    .day.long .t{font-size:11px;letter-spacing:-.02em}.day.longer .t{font-size:9.5px}}
+    .day.long .t{font-size:12px;letter-spacing:-.02em}.day.longer .t{font-size:10.5px}}
   dialog{border:1px solid var(--line2);border-radius:14px;background:var(--card);color:var(--txt);box-shadow:var(--shadow);padding:0;
     width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 32px)}
   dialog::backdrop{background:var(--scrim)}
@@ -100,10 +115,42 @@
   .cal .day.chosen .n{color:var(--accent-ink);font-weight:700}
   #review{margin:0;padding:0 14px 12px}
   #review b{white-space:nowrap}
+  .rows .btn{min-height:40px}
+  #hiddenNote{padding:10px 14px 14px;font-size:13px}
+  .opts{padding:4px 14px 14px;display:grid;gap:14px}
+  .opts section{display:grid;gap:8px}
+  .opts h3{margin:8px 0 0;font-size:14px}
+  .opts .sub{margin:0;color:var(--muted);font-size:13px}
+  .opts .line{margin:0;color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .opts .line .btn{min-height:40px;flex:none}
+  .check{display:flex;align-items:center;gap:10px;min-height:40px;cursor:pointer;font-size:14px}
+  .check input{width:20px;height:20px;margin:0;accent-color:var(--accent);flex:none}
+  .choice{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .choice .btn{min-height:40px;min-width:0}
+  #modes .btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  #themes .btn{display:flex;align-items:center;justify-content:center;gap:6px}
+  #themes .btn[aria-pressed="true"]{border:2px solid var(--accent);padding:5px 9px;font-weight:600}
+  .sw{width:14px;height:14px;border-radius:50%;flex:none;border:1px solid var(--line2)}
+  #lookDefault{justify-self:start;min-height:40px}
 </style>
+<script>
+// The look chosen in Options, put on before the first paint so the page never shows the wrong colours.
+(function(){
+  let mode = null, theme = null;
+  try {mode = localStorage.getItem("calltally.mode"); theme = localStorage.getItem("calltally.theme");} catch (error){}
+  const root = document.documentElement;
+  if (mode === "light" || mode === "dark") root.dataset.mode = mode;
+  if (["blue", "plum", "amber", "slate"].includes(theme)) root.dataset.theme = theme;
+  const color = getComputedStyle(root).getPropertyValue("--accent").trim();
+  if (color) document.querySelector('meta[name="theme-color"]').content = color;
+})();
+</script>
 </head>
 <body>
-<header><b>Call Tally</b><span id="updated"></span></header>
+<header><b>Call Tally</b><span id="updated"></span>
+  <button id="gear" type="button" aria-label="Options"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</header>
 <main id="main">
   <div id="phone" hidden></div>
   <div id="problem" hidden></div>
@@ -121,7 +168,6 @@
         <button class="total" id="tPeriod" type="button"><span class="lbl"></span><span class="val"></span></button>
         <button class="btn" id="pNext" type="button" aria-label="Next pay period">&gt;</button>
       </div>
-      <p class="note"><span id="periodNote"></span><button class="btn" id="change" type="button" hidden>Change</button></p>
     </div>
     <div class="week" id="week"></div>
     <div class="grid" id="grid"></div>
@@ -141,7 +187,42 @@
   </div>
   <p class="none" id="none" hidden>Nothing here.</p>
   <ul class="rows" id="rows"></ul>
+  <p class="none" id="hiddenNote" hidden></p>
   <div class="foot"><button class="btn" id="close" type="button">Close</button></div>
+</dialog>
+<dialog id="opts" aria-labelledby="optsTitle">
+  <div class="head">
+    <div><h2 id="optsTitle">Options</h2></div>
+  </div>
+  <div class="opts">
+    <section aria-labelledby="optPay">
+      <h3 id="optPay">Pay period</h3>
+      <p class="line"><span id="periodNote">Loading…</span><button class="btn" id="change" type="button" hidden>Change</button></p>
+    </section>
+    <section aria-labelledby="optDay">
+      <h3 id="optDay">Day details</h3>
+      <label class="check"><input type="checkbox" id="hideGone"> Hide ignored entries</label>
+    </section>
+    <section aria-labelledby="optLook">
+      <h3 id="optLook">Look</h3>
+      <p class="sub" id="modeLbl">Mode</p>
+      <div class="choice" id="modes" role="group" aria-labelledby="modeLbl">
+        <button class="btn" type="button" data-mode="system">System</button>
+        <button class="btn" type="button" data-mode="light">Light</button>
+        <button class="btn" type="button" data-mode="dark">Dark</button>
+      </div>
+      <p class="sub" id="themeLbl">Theme</p>
+      <div class="choice" id="themes" role="group" aria-labelledby="themeLbl">
+        <button class="btn" type="button" data-theme="teal"><span class="sw" data-t="teal"></span>Teal</button>
+        <button class="btn" type="button" data-theme="blue"><span class="sw" data-t="blue"></span>Blue</button>
+        <button class="btn" type="button" data-theme="plum"><span class="sw" data-t="plum"></span>Plum</button>
+        <button class="btn" type="button" data-theme="amber"><span class="sw" data-t="amber"></span>Amber</button>
+        <button class="btn" type="button" data-theme="slate"><span class="sw" data-t="slate"></span>Slate</button>
+      </div>
+      <button class="btn" id="lookDefault" type="button">Set to default</button>
+    </section>
+  </div>
+  <div class="foot"><button class="btn" id="optsClose" type="button">Close</button></div>
 </dialog>
 <dialog id="people" aria-labelledby="peopleTitle">
   <div class="head">
@@ -336,10 +417,10 @@ function fillCell(cell, data){
   }
   if (used && !data.calls && !data.texts){
     const x = document.createElement("span");
-    x.className = "x";
-    x.textContent = data.unanswered ? "no answer" : "deleted";
+    x.className = "x small";
+    x.textContent = data.unanswered ? "no answer" : "ignored";
     parts.push(x);
-    words.push(data.unanswered ? "calls not answered only" : "deleted entries only");
+    words.push(data.unanswered ? "calls not answered only" : "ignored entries only");
   }
   cell.replaceChildren(...parts);
   cell.setAttribute("aria-label", words.join(", "));
@@ -470,6 +551,7 @@ async function openSheet(key){
   $("sheetTotals").textContent = "";
   $("rows").replaceChildren();
   $("none").hidden = true;
+  $("hiddenNote").hidden = true;
   $("tabs").hidden = true;
   sheetTab = null;
   if (!sheet.open) sheet.showModal();
@@ -503,9 +585,13 @@ async function drawSheet(key){
 function showTab(key){
   $("tabCalls").setAttribute("aria-selected", String(sheetTab === "call"));
   $("tabTexts").setAttribute("aria-selected", String(sheetTab === "text"));
-  const shown = sheetEntries.filter(e => e.kind === sheetTab);
-  $("none").hidden = shown.length > 0;
+  const all = sheetEntries.filter(e => e.kind === sheetTab);
+  const shown = hideIgnored ? all.filter(e => !e.deleted_at) : all;
+  const hidden = all.length - shown.length;
+  $("none").hidden = shown.length > 0 || hidden > 0;
   $("rows").replaceChildren(...shown.map(entry => drawRow(entry, key)));
+  $("hiddenNote").textContent = hidden === 1 ? "1 ignored entry hidden" : `${hidden} ignored entries hidden`;
+  $("hiddenNote").hidden = hidden === 0;
 }
 function pickTab(kind){
   if (!openDay || $("tabs").hidden) return;
@@ -532,7 +618,7 @@ function drawRow(entry, key){
   const action = document.createElement("button");
   action.type = "button";
   action.className = "btn";
-  action.textContent = entry.deleted_at ? "Restore" : "Delete";
+  action.textContent = entry.deleted_at ? "Restore" : "Ignore";
   action.setAttribute("aria-label", `${action.textContent} ${entry.contact} at ${clock(entry.at)}`);
   action.addEventListener("click", async () => {
     action.disabled = true;
@@ -690,9 +776,52 @@ $("confirm").addEventListener("click", async () => {
   load();
 });
 
+// Options: the pay period, hiding ignored entries in the day sheet, and the look. The look and the check box are kept in
+// this browser only; the pay period start stays on the server.
+const opts = $("opts");
+const THEMES = ["teal", "blue", "plum", "amber", "slate"];
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+function stored(name){try {return localStorage.getItem(name);} catch (error){return null;}}
+function store(name, value){
+  try {
+    if (value === null) localStorage.removeItem(name); else localStorage.setItem(name, value);
+  } catch (error){}
+}
+let hideIgnored = stored("calltally.hideIgnored") === "1";
+function lookMode(){const m = document.documentElement.dataset.mode; return m === "light" || m === "dark" ? m : "system";}
+function lookTheme(){const t = document.documentElement.dataset.theme; return THEMES.includes(t) ? t : "teal";}
+function drawLook(){
+  const mode = lookMode(), theme = lookTheme();
+  for (const b of $("modes").querySelectorAll(".btn")) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  for (const b of $("themes").querySelectorAll(".btn")) b.setAttribute("aria-pressed", String(b.dataset.theme === theme));
+  const color = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  if (color) document.querySelector('meta[name="theme-color"]').content = color;
+}
+function setLook(mode, theme){
+  const root = document.documentElement;
+  if (mode === "system") delete root.dataset.mode; else root.dataset.mode = mode;
+  if (theme === "teal") delete root.dataset.theme; else root.dataset.theme = theme;
+  store("calltally.mode", mode === "system" ? null : mode);
+  store("calltally.theme", theme === "teal" ? null : theme);
+  drawLook();
+}
+for (const b of $("modes").querySelectorAll(".btn")) b.addEventListener("click", () => setLook(b.dataset.mode, lookTheme()));
+for (const b of $("themes").querySelectorAll(".btn")) b.addEventListener("click", () => setLook(lookMode(), b.dataset.theme));
+$("lookDefault").addEventListener("click", () => setLook("system", "teal"));
+darkQuery.addEventListener("change", drawLook);
+$("hideGone").checked = hideIgnored;
+$("hideGone").addEventListener("change", () => {
+  hideIgnored = $("hideGone").checked;
+  store("calltally.hideIgnored", hideIgnored ? "1" : null);
+  if (openDay && !$("tabs").hidden) showTab(openDay);
+});
+$("gear").addEventListener("click", () => {drawLook(); if (!opts.open) opts.showModal();});
+$("optsClose").addEventListener("click", () => opts.close());
+drawLook();
+
 $("close").addEventListener("click", () => sheet.close());
 $("peopleClose").addEventListener("click", () => people.close());
-for (const dialog of [sheet, people, pick]) dialog.addEventListener("click", event => {if (event.target === dialog) dialog.close();});
+for (const dialog of [sheet, people, pick, opts]) dialog.addEventListener("click", event => {if (event.target === dialog) dialog.close();});
 sheet.addEventListener("close", () => {if (!sheet.open) openDay = null;});
 pick.addEventListener("close", () => {chosen = null;});
 
