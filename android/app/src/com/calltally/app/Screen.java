@@ -342,19 +342,23 @@ abstract class Screen extends Activity {
         return shape;
     }
 
-    /** Wraps a background so a touch shows. */
+    /**
+     * Wraps an opaque background so a touch shows. With no mask the ripple is masked by the background itself, so it
+     * never shows on a clear or see-through background, and hardly shows on one tinted in the accent: use
+     * touchable(content, radius) for those.
+     */
     Drawable touchable(Drawable content) {
         int ripple = (accent & 0x00ffffff) | 0x33000000;
         return new RippleDrawable(ColorStateList.valueOf(ripple), content, null);
     }
 
     /**
-     * A touch for something with no background of its own. The ripple needs a solid mask: wrapped round a clear shape,
-     * as touchable() does, it would be masked by that shape and never show.
+     * Wraps a clear, see-through or accent-tinted background, or none (null), so a touch shows: the ripple has a solid
+     * rounded mask of its own, of this radius.
      */
-    Drawable clearTouch(float radiusDp) {
+    Drawable touchable(Drawable content, float maskRadiusDp) {
         int ripple = (accent & 0x00ffffff) | 0x33000000;
-        return new RippleDrawable(ColorStateList.valueOf(ripple), null, shape(0xffffffff, 0, 0, radiusDp));
+        return new RippleDrawable(ColorStateList.valueOf(ripple), content, shape(0xffffffff, 0, 0, maskRadiusDp));
     }
 
     /** The page's plain button: a soft grey with a thin line, 44dp tall. */
@@ -402,7 +406,7 @@ abstract class Screen extends Activity {
         icon.setTint(muted);
         button.setImageDrawable(icon);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        button.setBackground(clearTouch(24));
+        button.setBackground(touchable(null, 24));
         button.setPadding(0, 0, 0, 0);
         return button;
     }

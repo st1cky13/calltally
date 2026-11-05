@@ -78,7 +78,8 @@ public class PayActivity extends Screen {
         nav.setGravity(Gravity.CENTER_VERTICAL);
         calPrev = arrow(R.drawable.chevron_left, "Previous month", R.id.cal_prev);
         calNext = arrow(R.drawable.chevron_right, "Next month", R.id.cal_next);
-        calTitle = text("", 17, txt, true);
+        calTitle = text("", 20, txt, false);
+        calTitle.setTypeface(medium());
         calTitle.setId(R.id.cal_title);
         calTitle.setGravity(Gravity.CENTER);
         nav.addView(calPrev, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -360,8 +361,8 @@ public class PayActivity extends Screen {
         final LocalDate firstDay = shownFirst(), lastDay = shownLast();
         boolean isMarked = date.equals(firstDay) || date.equals(lastDay);
         if (isMarked) filled(button);
-        else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x40000000, (accent & 0x00ffffff) | 0x80000000, 1, 8)));
-        else button.setBackground(clearTouch(8));
+        else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x40000000, (accent & 0x00ffffff) | 0x80000000, 1, 8), 8));
+        else button.setBackground(touchable(null, 8));
         button.setSelected(isMarked);
         button.setOnClickListener(new View.OnClickListener() {
             @Override

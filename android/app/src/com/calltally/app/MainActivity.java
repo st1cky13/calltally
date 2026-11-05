@@ -186,15 +186,12 @@ public class MainActivity extends Screen {
         title.setGravity(Gravity.CENTER);
         title.setPadding(dp(6), 0, dp(6), 0);
         title.setMinHeight(dp(48));
-        title.setBackground(touchable(shape(0, 0, 0, 8)));
-        // An empty space as wide as >> and its gap keeps the month's name in the middle of the screen.
-        nav.addView(new View(this), new LinearLayout.LayoutParams(dp(54), dp(48)));
+        title.setBackground(touchable(null, 8));
+        // The month's name sits between its own two arrows, with >> at the far right.
         nav.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(48)));
         nav.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         nav.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        LinearLayout.LayoutParams nowSize = new LinearLayout.LayoutParams(dp(48), dp(48));
-        nowSize.leftMargin = dp(6);
-        nav.addView(now, nowSize);
+        nav.addView(now, new LinearLayout.LayoutParams(dp(48), dp(48)));
         monthCard.addView(nav, wide());
         prev.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -313,7 +310,7 @@ public class MainActivity extends Screen {
         Drawable icon = getDrawable(R.drawable.gear).mutate();
         icon.setTint(ink);
         gear.setImageDrawable(icon);
-        gear.setBackground(touchable(shape(0, 0, 0, 8)));
+        gear.setBackground(touchable(null, 22));
         gear.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -536,12 +533,11 @@ public class MainActivity extends Screen {
         boolean isToday = date.equals(today);
         // Only a day with something gets a tile; today keeps its ring. A day still to come has its number paler.
         int busy = (accent & 0x00ffffff) | (night() ? 0x33000000 : 0x22000000);
-        cell.setBackground(isToday ? touchable(shape(used ? busy : 0, accent, 2, 8)) : used ? touchable(shape(busy, 0, 0, 8)) : null);
+        cell.setBackground(isToday ? touchable(shape(used ? busy : 0, accent, 2, 8), 8) : used ? touchable(shape(busy, 0, 0, 8), 8) : null);
         cell.setClickable(used);
         cell.setEnabled(used);
         int faint = (muted & 0x00ffffff) | 0x80000000;
         number.setTextColor(isToday ? accent : !used && date.isAfter(today) ? faint : muted);
-        number.setTextSize(used || isToday ? 13 : 12);
         number.setTypeface(isToday ? Typeface.create(Typeface.DEFAULT, Typeface.BOLD) : Typeface.DEFAULT);
         StringBuilder words = new StringBuilder(Words.monthName(date.getMonthValue()) + " " + date.getDayOfMonth());
         if (data != null && data.calls > 0) {
@@ -608,7 +604,8 @@ public class MainActivity extends Screen {
         top.setGravity(Gravity.CENTER_VERTICAL);
         pickPrev = arrow(R.drawable.chevron_left, "Previous year", R.id.pick_prev);
         pickNext = arrow(R.drawable.chevron_right, "Next year", R.id.pick_next);
-        pickTitle = text("", 17, txt, true);
+        pickTitle = text("", 20, txt, false);
+        pickTitle.setTypeface(medium());
         pickTitle.setId(R.id.pick_year);
         pickTitle.setGravity(Gravity.CENTER);
         top.addView(pickPrev, new LinearLayout.LayoutParams(dp(48), dp(48)));

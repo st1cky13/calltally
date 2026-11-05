@@ -1289,6 +1289,20 @@ def main():
         check("the seeded month's total and its busy day match the reference", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
         run.shot("10c-seeded-month")
+        # The same month in dark, for a look at the busy day's tile; the screen is drawn again and keeps its month.
+        try:
+            run.adb("shell", "cmd", "uimode", "night", "yes")
+            time.sleep(3)
+            dark = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title, 10)
+            if text_of(dark, "month_title") == seeded_title:
+                run.shot("10d-seeded-month-dark")
+            else:
+                print(f"info  skipped: the dark shot of the seeded month, as the screen came back on "
+                      f"{text_of(dark, 'month_title')!r}")
+        finally:
+            run.adb("shell", "cmd", "uimode", "night", "no", check=False)
+            time.sleep(3)
+        nodes = run.nodes()
 
         # Who counts: Dana, unticked and no longer on the phone, shows unticked; a search with letters looks up names only.
         run.sh("input", "keyevent", "KEYCODE_BACK")
