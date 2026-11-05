@@ -7,30 +7,24 @@ import android.net.Uri;
 import android.provider.CallLog;
 import android.provider.ContactsContract.CommonDataKinds.Phone;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
-/** Reads the phone's contacts, calls and messages. Never asks for what a message says, so the words can't leave. */
+/**
+ * Reads the phone's contacts, calls and messages into plain values and hands each row to Rules, which decides what it
+ * becomes. Never asks for what a message says, so the words can't leave.
+ */
 final class Collector {
     private static final Uri SMS = Uri.parse("content://sms");
     private static final Uri MMS = Uri.parse("content://mms");
     private static final Uri THREADS = Uri.parse("content://mms-sms/conversations?simple=true");
     private static final Uri CANONICAL = Uri.parse("content://mms-sms/canonical-addresses");
-    private static final int BOX_RECEIVED = 1;
-    private static final int BOX_SENT = 2;
-    // Delivery and read reports sit in the same table, but they aren't messages. 130 is a picture message still waiting
-    // to download: Android swaps it for a new row with a different time once it arrives, so counting both would double it.
-    private static final Set<Integer> NOT_MESSAGES = new HashSet<>(Arrays.asList(130, 134, 135, 136));
-    private static final int FALLBACK_MESSAGES = 5;
 
     private final ContentResolver resolver;
     private final Map<String, String> workNames = new HashMap<>();
     private final Map<Long, List<String>> threadPeople = new HashMap<>();
-    private final Map<Long, Rules.Who> threadWho = new HashMap<>();
+    private Rules.Texts texts;
     private boolean conversationList = true;
     private String callsProblem;
     private String textsProblem;
@@ -74,15 +68,16 @@ final class Collector {
             callsProblem = reason(error, "calls");
         }
         try {
-            List<Rules.Entry> texts = new ArrayList<>();
+            List<Rules.Entry> found = new ArrayList<>();
             readThreads();
             threadPeople.putAll(peopleFromMessages());
-            int messages = readSms(texts) + readMms(texts);
+            texts = new Rules.Texts(workNames, threadPeople);
+            int messages = readSms(found) + readMms(found);
             // A phone that suddenly shows no messages is having a problem. Reporting that keeps the page from looking healthy.
             if (messages == 0) throw new Problem("Android returned no messages.");
-            entries.addAll(texts);
+            entries.addAll(found);
         } catch (RuntimeException error) {
-            threadWho.clear();
+            texts = null;
             textsProblem = reason(error, "texts");
         }
         if (callsProblem != null && textsProblem != null) throw new Problem(callsProblem + " " + textsProblem);
@@ -113,48 +108,31 @@ final class Collector {
     }
 
     int groups() {
-        int count = 0;
-        for (Rules.Who who : threadWho.values()) {
-            if (who != null && who.number.startsWith("thread-")) count++;
-        }
-        return count;
+        return texts == null ? 0 : texts.groups();
     }
 
     /** Every number saved for every contact. A number on both a work and a personal contact counts as work. */
     private void readContacts() {
         String[] columns = {Phone.DISPLAY_NAME, Phone.NUMBER};
         try (Cursor cursor = open(Phone.CONTENT_URI, columns, "contacts")) {
-            while (cursor.moveToNext()) {
-                String name = cursor.getString(0);
-                String key = Rules.numberKey(cursor.getString(1));
-                if (!key.isEmpty() && Rules.isWork(name)) workNames.put(key, name.trim());
-            }
+            while (cursor.moveToNext()) Rules.addContact(workNames, cursor.getString(0), cursor.getString(1));
         }
         // With none found, everything would look personal and the page would still show a healthy upload.
         if (workNames.isEmpty()) throw new Problem("No contacts ending in -Work were found.");
     }
 
-    /** Who is in each conversation. Android leaves your own number out of this list. */
+    /** Who is in each conversation, from Android's conversation list. */
     private void readThreads() {
         Map<String, String> addresses = new HashMap<>();
+        Map<Long, String> recipientIds = new HashMap<>();
         try {
             try (Cursor cursor = open(CANONICAL, new String[] {"_id", "address"}, "conversations")) {
                 while (cursor.moveToNext()) addresses.put(cursor.getString(0), cursor.getString(1));
             }
             try (Cursor cursor = open(THREADS, new String[] {"_id", "recipient_ids"}, "conversations")) {
-                while (cursor.moveToNext()) {
-                    String ids = cursor.getString(1);
-                    if (ids == null || ids.trim().isEmpty()) continue;
-                    List<String> people = new ArrayList<>();
-                    boolean complete = true;
-                    for (String id : ids.trim().split("\\s+")) {
-                        String address = addresses.get(id);
-                        if (address == null) complete = false;
-                        else people.add(address);
-                    }
-                    if (complete) threadPeople.put(cursor.getLong(0), people);
-                }
+                while (cursor.moveToNext()) recipientIds.put(cursor.getLong(0), cursor.getString(1));
             }
+            threadPeople.putAll(Rules.threadPeople(addresses, recipientIds));
         } catch (RuntimeException error) {
             // Some phones don't offer this list. Each conversation is then read from its messages instead.
             threadPeople.clear();
@@ -167,18 +145,9 @@ final class Collector {
         String[] columns = {CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.TYPE, CallLog.Calls.DURATION};
         try (Cursor cursor = open(CallLog.Calls.CONTENT_URI, columns, "call log")) {
             while (cursor.moveToNext()) {
-                String number = cursor.getString(0);
-                String name = workNames.get(Rules.numberKey(number));
-                if (name == null) continue;
-                String direction;
-                switch (cursor.getInt(2)) {
-                    case CallLog.Calls.INCOMING_TYPE: direction = "in"; break;
-                    case CallLog.Calls.OUTGOING_TYPE: direction = "out"; break;
-                    case CallLog.Calls.MISSED_TYPE: direction = "missed"; break;
-                    case CallLog.Calls.REJECTED_TYPE: direction = "rejected"; break;
-                    default: other++; continue;
-                }
-                entries.add(new Rules.Entry("call", cursor.getLong(1) / 1000L, name, number, direction, cursor.getLong(3)));
+                Rules.Decision decision = Rules.call(workNames, cursor.getString(0), cursor.getLong(1), cursor.getInt(2), cursor.getLong(3));
+                if (decision.entry != null) entries.add(decision.entry);
+                else if (Rules.SKIP_KIND.equals(decision.skipped)) other++;
             }
         }
         return other;
@@ -191,51 +160,25 @@ final class Collector {
             int type = need(cursor, "type", "texts"), thread = need(cursor, "thread_id", "texts");
             while (cursor.moveToNext()) {
                 rows++;
-                int box = cursor.getInt(type);
-                if (box != BOX_RECEIVED && box != BOX_SENT) continue;
-                Rules.Who who = null;
-                List<String> people = threadPeople.get(cursor.getLong(thread));
-                if (people != null && people.size() > 1) {
-                    who = whoInThread(cursor.getLong(thread), people);
-                } else {
-                    String number = cursor.getString(address);
-                    String name = workNames.get(Rules.numberKey(number));
-                    if (name != null) who = new Rules.Who(name, number);
-                }
-                if (who == null) continue;
-                entries.add(new Rules.Entry("text", Rules.toSeconds(cursor.getLong(date), false), who.contact, who.number,
-                    box == BOX_SENT ? "out" : "in", 0));
+                Rules.Decision decision = texts.sms(cursor.getLong(thread), cursor.getString(address), cursor.getLong(date), cursor.getInt(type));
+                if (decision.entry != null) entries.add(decision.entry);
             }
         }
         return rows;
     }
 
-    private Rules.Who whoInThread(long thread, List<String> people) {
-        if (!threadWho.containsKey(thread)) threadWho.put(thread, Rules.classify(thread, people, workNames));
-        return threadWho.get(thread);
-    }
-
     /** Without the conversation list, several messages per conversation give a fuller and steadier list of people. */
     private Map<Long, List<String>> peopleFromMessages() {
-        Map<Long, List<Long>> ids = new HashMap<>();
+        List<long[]> messages = new ArrayList<>();
         try (Cursor cursor = resolver.query(MMS, new String[] {"_id", "thread_id"}, null, null, "date DESC")) {
             if (cursor == null) throw new Problem("Android didn't return your messages.");
-            while (cursor.moveToNext()) {
-                long thread = cursor.getLong(1);
-                if (threadPeople.containsKey(thread)) continue;
-                List<Long> list = ids.get(thread);
-                if (list == null) {
-                    list = new ArrayList<>();
-                    ids.put(thread, list);
-                }
-                if (list.size() < FALLBACK_MESSAGES) list.add(cursor.getLong(0));
-            }
+            while (cursor.moveToNext()) messages.add(new long[] {cursor.getLong(0), cursor.getLong(1)});
         }
         Map<Long, List<String>> people = new HashMap<>();
-        for (Map.Entry<Long, List<Long>> entry : ids.entrySet()) {
-            Set<String> addresses = new java.util.TreeSet<>();
-            for (long id : entry.getValue()) addresses.addAll(addressesOn(id));
-            people.put(entry.getKey(), new ArrayList<>(addresses));
+        for (Map.Entry<Long, List<Long>> entry : Rules.fallbackMessages(messages, threadPeople.keySet()).entrySet()) {
+            List<List<String>> addresses = new ArrayList<>();
+            for (long id : entry.getValue()) addresses.add(addressesOn(id));
+            people.put(entry.getKey(), Rules.peopleOnMessages(addresses));
         }
         return people;
     }
@@ -248,15 +191,9 @@ final class Collector {
             int typeColumn = cursor.getColumnIndex("m_type");
             while (cursor.moveToNext()) {
                 rows++;
-                int box = cursor.getInt(boxColumn);
-                if (box != BOX_RECEIVED && box != BOX_SENT) continue;
-                if (typeColumn >= 0 && NOT_MESSAGES.contains(cursor.getInt(typeColumn))) continue;
-                long thread = cursor.getLong(threadColumn);
-                List<String> people = threadPeople.get(thread);
-                Rules.Who who = people == null ? null : whoInThread(thread, people);
-                if (who == null) continue;
-                entries.add(new Rules.Entry("text", Rules.toSeconds(cursor.getLong(date), true), who.contact, who.number,
-                    box == BOX_SENT ? "out" : "in", 0));
+                int messageType = typeColumn >= 0 ? cursor.getInt(typeColumn) : -1;
+                Rules.Decision decision = texts.mms(cursor.getLong(threadColumn), cursor.getLong(date), cursor.getInt(boxColumn), messageType);
+                if (decision.entry != null) entries.add(decision.entry);
             }
         }
         return rows;
@@ -269,7 +206,7 @@ final class Collector {
         try (Cursor cursor = resolver.query(uri, new String[] {"address"}, null, null, null)) {
             while (cursor != null && cursor.moveToNext()) {
                 String address = cursor.getString(0);
-                if (address != null && !address.isEmpty() && !address.equals("insert-address-token")) found.add(address);
+                if (Rules.usableAddress(address)) found.add(address);
             }
         } catch (RuntimeException error) {
             return found;

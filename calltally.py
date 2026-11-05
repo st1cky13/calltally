@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.5.2"
+VERSION = "0.6.0"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -342,6 +342,19 @@ class Store:
         return target
 
 
+RECORDED = ("/api/upload", "/api/status")
+RECORD_LOCK = threading.Lock()
+
+
+def record(path, raw):
+    # Only for the emulator check: CALLTALLY_RECORD names a file that gets each raw upload and status body, one per line.
+    target = os.environ.get("CALLTALLY_RECORD")
+    if not target or path not in RECORDED:
+        return
+    with RECORD_LOCK, open(target, "ab") as out:
+        out.write(path.encode() + b" " + raw + b"\n")
+
+
 def make_handler(store):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"calltally/{VERSION}"
@@ -431,8 +444,10 @@ def make_handler(store):
             if not 0 <= length <= MAX_BODY:
                 self.close_connection = True
                 raise BadRequest("too large")
+            raw = self.rfile.read(length)
+            record(urlparse(self.path).path, raw)
             try:
-                payload = json.loads(self.rfile.read(length))
+                payload = json.loads(raw)
             except ValueError:
                 raise BadRequest("bad JSON") from None
             if not isinstance(payload, dict):

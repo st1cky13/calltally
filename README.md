@@ -35,6 +35,12 @@ phone has a problem, such as texts it can't read, the page shows it in one line 
 That line holds no names, numbers or counts. The app's screen shows the last result in full, including how many work
 calls it skipped for being another kind, such as voicemail.
 
+## Checking the app
+
+`python3 tools/emulator_check.py` builds a test copy of the app, runs it on the Android emulator with made-up contacts,
+calls and texts against a test server on the same computer, and prints a pass or fail line for each thing it checks. It
+takes several minutes and stops the emulator and the server when it is done.
+
 ## What counts
 
 - A message in a group counts if the group includes at least one `-Work` contact, so a mixed group can count personal

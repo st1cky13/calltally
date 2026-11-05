@@ -338,7 +338,7 @@ class SettingsTests(ServerCase):
         self.assertEqual(self.get("/api/settings")["pay_period_start"], "2026-10-25")
 
     def test_health_reports_version(self):
-        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.5.2"})
+        self.assertEqual(self.get("/api/health"), {"ok": True, "version": "0.6.0"})
 
 
 class StatusTests(ServerCase):
@@ -377,6 +377,29 @@ class StatusTests(ServerCase):
         self.post("/api/status", {"text": "Android returned no messages."})
         self.post("/api/status", {"text": ""})
         self.assertEqual(self.status()[2], "2026-01-01T00:00:00Z")
+
+    def test_empty_upload_still_checks_in(self):
+        # The app sends an empty upload when nothing is new, so the page can show the phone checked in.
+        self.assertIsNone(self.status()[2])
+        self.assertEqual(self.post("/api/upload", {"entries": []}), (200, {"received": 0, "added": 0}))
+        self.assertRegex(self.status()[2], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertEqual(self.get("/api/range?from=2026-01-01&to=2026-12-31")["days"], {})
+
+    def test_upload_size_limit(self):
+        many = [entry(number=f"555{i:07d}") for i in range(calltally.MAX_ENTRIES + 1)]
+        self.assertEqual(self.post("/api/upload", {"entries": many})[0], 400)
+        self.assertEqual(self.post("/api/upload", {"entries": many[:-1]}), (200, {"received": 2000, "added": 2000}))
+
+    def test_record_is_off_unless_asked(self):
+        target = Path(self.temp) / "record.txt"
+        with unittest.mock.patch.dict(os.environ, {"CALLTALLY_RECORD": ""}):
+            self.post("/api/upload", {"entries": [entry()]})
+        self.assertFalse(target.exists())
+        with unittest.mock.patch.dict(os.environ, {"CALLTALLY_RECORD": str(target)}):
+            self.post("/api/upload", None, raw=b'{"entries":[]}')
+            self.post("/api/status", None, raw=b'{"text":""}')
+            self.post("/api/settings", {"pay_period_start": "2026-11-01"})
+        self.assertEqual(target.read_bytes(), b'/api/upload {"entries":[]}\n/api/status {"text":""}\n')
 
     def test_upload_leaves_status_alone(self):
         self.post("/api/status", {"text": "Android returned no messages."})
@@ -510,6 +533,56 @@ class AndroidRulesTests(ServerCase):
         day = self.get("/api/range?from=2026-11-04&to=2026-11-04")["days"]["2026-11-04"]
         self.assertEqual((day["call_s"], day["deleted"]), (872, 1))
         self.assertIsNotNone(next(r for r in self.get("/api/day?day=2026-11-04")["entries"] if r["id"] == target["id"])["deleted_at"])
+
+    def test_rows_left_out_and_why(self):
+        rules = self.run_rules()
+        # Voicemail, blocked and answered elsewhere are another kind; missed and declined stay listed.
+        self.assertEqual(rules["call-kinds"], "1=in 2=out 3=missed 4=skip:other-kind 5=rejected 6=skip:other-kind 7=skip:other-kind")
+        self.assertEqual(rules["call-personal"], "skip:personal")
+        self.assertEqual((rules["renamed-call"], rules["renamed-text"]), ("skip:personal", "skip:personal"))
+        # Drafts (3), outbox (4), failed (5) and queued (6) messages are never sent.
+        self.assertEqual(rules["sms-boxes"], "1=in 2=out 3=skip:not-received-or-sent 4=skip:not-received-or-sent "
+                                             "5=skip:not-received-or-sent 6=skip:not-received-or-sent")
+        self.assertEqual(rules["sms-personal"], "skip:personal")
+        self.assertEqual(rules["mms-boxes"], "1=in 2=out 3=skip:not-received-or-sent 4=skip:not-received-or-sent")
+        self.assertEqual(rules["mms-kinds"], "-1=in 128=in 130=skip:not-a-message 132=in 134=skip:not-a-message "
+                                             "135=skip:not-a-message 136=skip:not-a-message")
+        self.assertEqual(rules["mms-unknown-thread"], "skip:people-unknown")
+        # A missed call keeps its ringing time in the upload, and the server never counts it.
+        missed = json.loads(rules["call-missed"])
+        self.assertEqual((missed["direction"], missed["duration_s"], missed["epoch"]), ("missed", 7, 1793000000))
+        self.assertEqual(self.post("/api/upload", {"entries": [missed]})[0], 200)
+        day = self.get(f"/api/range?from={missed['at'][:10]}&to={missed['at'][:10]}")["days"][missed["at"][:10]]
+        self.assertEqual((day["call_s"], day["calls"], day["unanswered"]), (0, 0, 1))
+
+    def test_same_second_counts_once(self):
+        rules = self.run_rules()
+        self.assertEqual(rules["same-second"], "true true")
+        # Both go up in one run (2 fresh, 0 unusable); once one was sent neither goes again, and a bad entry is skipped.
+        self.assertEqual(rules["fresh"], "2 0 0 1")
+        self.assertEqual(self.post("/api/upload", None, raw=rules["same-second-body"].encode()), (200, {"received": 2, "added": 1}))
+
+    def test_batches_of_500(self):
+        rules = self.run_rules()
+        self.assertEqual(rules["batches"], "0=[0] 1=[1] 499=[499] 500=[500] 501=[500,1] 1000=[500,500] 1001=[500,500,1] "
+                                           "1201=[500,500,201]")
+        self.assertEqual(self.post("/api/upload", None, raw=rules["batch-body-1"].encode()), (200, {"received": 500, "added": 500}))
+        self.assertEqual(self.post("/api/upload", None, raw=rules["batch-body-2"].encode()), (200, {"received": 1, "added": 1}))
+        self.assertEqual(self.get("/api/totals")["calls"], 501)
+
+    def test_contacts_and_conversation_people(self):
+        rules = self.run_rules()
+        # Every number on a -Work contact, by its last ten digits; a personal contact sharing a number doesn't take it.
+        self.assertEqual(rules["contacts"], "{5550001111=Dana-Work, 5551234567=Dana-Work, 5557770000=Kim -Work}")
+        # A conversation with a recipient that can't be looked up, or none, is left out.
+        self.assertEqual(rules["thread-people"], "{10=[+15551234567], 11=[+15551234567, 5559998888]}")
+        # Without the list: the five newest messages of each conversation not already known.
+        self.assertEqual(rules["fallback"], "{20=[1, 2, 3, 4, 5], 21=[10]}")
+        self.assertEqual(rules["people-on-messages"], "[+15551234567, 5559998888]")
+        self.assertEqual(rules["usable"], "truefalsefalsefalse")
+        self.assertEqual((rules["groups"], rules["fixture-groups"]), ("1", "1"))
+        # A picture message time stored in milliseconds is read as seconds.
+        self.assertEqual(json.loads(rules["mms-millis"])["epoch"], 1793000000)
 
 
 class TermuxIdTests(ServerCase):

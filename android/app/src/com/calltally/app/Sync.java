@@ -18,9 +18,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -30,7 +27,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** One upload run, the schedule that starts runs, and the status the app's screen shows. */
 final class Sync {
     static final String[] PERMISSIONS = {Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS};
-    private static final int BATCH = 500;
     private static final int JOB_PERIODIC = 1;
     static final int JOB_CHANGES = 2;
     private static final long PERIOD_MS = 15 * 60 * 1000L;
@@ -171,14 +167,9 @@ final class Sync {
             if (everything) new File(context.getFilesDir(), SENT_FILE).delete();
             Collector collector = new Collector(context);
             List<Rules.Entry> found = collector.collect();
-            Set<String> sent = readSent(context);
-            List<Rules.Entry> fresh = new ArrayList<>();
-            int skipped = 0;
-            for (Rules.Entry entry : found) {
-                // One unusable record must not hold up everything after it.
-                if (!entry.acceptable()) skipped++;
-                else if (!sent.contains(hash(entry.key()))) fresh.add(entry);
-            }
+            Rules.Fresh chosen = Rules.fresh(found, readSent(context));
+            List<Rules.Entry> fresh = chosen.entries;
+            int skipped = chosen.unusable;
             String problem = collector.problem();
             int other = collector.otherCalls();
             String otherLine = other == 0 ? "" : other == 1 ? "\nSkipped 1 call of another kind." : "\nSkipped " + other + " calls of other kinds.";
@@ -251,15 +242,12 @@ final class Sync {
 
     private static void upload(Context context, List<Rules.Entry> fresh) throws IOException, UploadProblem {
         // An empty first batch still tells the page the phone checked in.
-        int start = 0;
-        do {
-            List<Rules.Entry> batch = fresh.subList(start, Math.min(start + BATCH, fresh.size()));
+        for (List<Rules.Entry> batch : Rules.batches(fresh)) {
             post(Rules.body(batch));
             try (FileWriter out = new FileWriter(new File(context.getFilesDir(), SENT_FILE), true)) {
-                for (Rules.Entry entry : batch) out.write(hash(entry.key()) + "\n");
+                for (Rules.Entry entry : batch) out.write(Rules.hash(entry.key()) + "\n");
             }
-            start += BATCH;
-        } while (start < fresh.size());
+        }
     }
 
     private static void post(String body) throws UploadProblem {
@@ -293,16 +281,5 @@ final class Sync {
             while ((line = in.readLine()) != null) sent.add(line);
         }
         return sent;
-    }
-
-    private static String hash(String text) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder out = new StringBuilder();
-            for (int i = 0; i < 16; i++) out.append(String.format(Locale.US, "%02x", digest[i]));
-            return out.toString();
-        } catch (NoSuchAlgorithmException error) {
-            throw new IllegalStateException(error);
-        }
     }
 }
