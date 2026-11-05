@@ -1,8 +1,8 @@
 # calltally
 
 Call Tally is an Android app that shows your time on calls and your texts with the people you choose, by month, by pay
-period and for all time. It keeps its own record on the phone. Nothing leaves the phone: there is no account, no server
-and no upload.
+period and for all time. It keeps its own record on the phone. Nothing leaves the phone: there is no account and
+nothing is sent anywhere.
 
 It opens on the current month, with arrows to move between months. Each day shows its exact call time and the number of
 texts. Above the calendar are the month's totals and the pay period's, below it the totals for all time: call time,
@@ -70,8 +70,5 @@ app's files are deleted, and the record is built from what the phone holds.
 `python3 tools/emulator_check.py` builds a test copy of the app, runs it on the Android emulator with made-up contacts,
 calls and texts, goes through the first start, and checks the record the app keeps and its screens. It prints a pass or
 fail line for each thing it checks, takes several minutes, and stops the emulator when it is done.
-
-`calltally.py`, `calltally.html` and `deploy/` are the server and page of the uploading versions. The app no longer uses
-them; they will be retired in a later release.
 
 These records are a personal aid and may be incomplete. Check them before relying on them for pay or billing.

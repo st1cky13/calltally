@@ -6,11 +6,11 @@ seeds contacts, calls and messages (among them an RCS chat that the conversation
 permission questions, Who counts with a tick, picking days on the pay period calendar, Skip, and the month screen with no pay
 period row. It sets the pay period through the test hook and turns it off again with Reset from Options. Then it
 sets it again, ticks Dana-Work and Sam - Work through it, runs the app and copies its record
-off the emulator to check it with sqlite3 against what calltally.py would have kept. Then it unticks Dana, ticks her again
+off the emulator to check it with sqlite3 against what tests/reference.py would have kept. Then it unticks Dana, ticks her again
 and deletes her contact, checking that nothing is ever lost, ticks Mom to check that conversations keep their identity,
 and takes the app's permissions away. After the first run it also opens Options > Phone check and reads its rows: the
 top line, the seeded chats and the newest messages with how each counts. Last it opens the month screen and reads it with uiautomator: the title, the three
-totals rows and the grid, counted as calltally.py counts the record, with every button at least 40dp tall; then Who
+totals rows and the grid, counted as tests/reference.py counts the record, with every button at least 40dp tall; then Who
 counts with its ticks and search; then a damaged record, which must be moved aside, with an OK that clears the note.
 Last, an update over what the uploading app (0.6.0) leaves: a fresh install given its sent.txt and its last run's words by
 hand, then the same build installed over it, which must open on the first-start page with the old files gone. Prints one
@@ -38,8 +38,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-import calltally  # noqa: E402
+sys.path.insert(0, str(ROOT / "tests"))
+import reference  # noqa: E402  (tests/reference.py: the id rule, repeat rule and counting kept from the retired server)
 
 TOOLS = Path.home() / "local" / "calltally-build"
 SDK = TOOLS / "android-sdk"
@@ -512,9 +512,9 @@ def people(folder):
     return {p["name"]: {**p, "numbers": numbers.get(p["key"], set())} for p in rows(folder, "people", "key")}
 
 
-def server_rows(want, temp):
-    """What calltally.py's Store keeps for the same entries: its ids, its repeat rule, its columns."""
-    store = calltally.Store(temp / "server.db")
+def reference_rows(want, temp):
+    """What the reference Store keeps for the same entries: its ids, its repeat rule, its columns."""
+    store = reference.Store(temp / "reference.db")
     store.add(want)
     conn = store.connect()
     try:
@@ -524,10 +524,10 @@ def server_rows(want, temp):
 
 
 def counted(folder, day, temp):
-    """One day counted by calltally.py's own range on a copy of the record."""
+    """One day counted by the reference's range on a copy of the record."""
     copy = temp / f"count-{folder.name}.db"
     shutil.copyfile(folder / DATABASE, copy)
-    return calltally.Store(copy).range(day, day)["days"].get(day, {})
+    return reference.Store(copy).range(day, day)["days"].get(day, {})
 
 
 def expected(groups, zone):
@@ -834,11 +834,11 @@ def main():
             raise RuntimeError("no run finished")
         first = run.record()
         got = rows(first)
-        need = server_rows(want, out)
-        check("exactly the expected entries are in the record, as calltally.py would keep them", got == need,
+        need = reference_rows(want, out)
+        check("exactly the expected entries are in the record, as the reference would keep them", got == need,
               f"extra {[r for r in got if r not in need][:2]} missing {[r for r in need if r not in got][:2]}")
-        check("the record's ids are the ones calltally.py makes",
-              {r["id"] for r in got} == {calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in want})
+        check("the record's ids are the ones the reference makes",
+              {r["id"] for r in got} == {reference.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in want})
         blob = json.dumps(got) + json.dumps(rows(first, "people", "key")) + json.dumps(rows(first, "numbers", "person_key"))
         check("nothing from Mom or Work Plumbing", all(s not in blob for s in ("Mom", "Plumbing", MOM, PLUMBING)))
         check("no draft kept", not any(r["epoch"] == T + 1200 for r in got))
@@ -1018,7 +1018,7 @@ def main():
         check("group message seeded" if groups else "group message not seeded (provider refused)", True)
 
         # The month screen, opened with everything allowed again: the month's title, its three totals rows and its grid,
-        # counted as calltally.py counts the same record.
+        # counted as the reference counts the same record.
         for permission in PERMISSIONS:
             run.sh("pm", "grant", APP, permission)
         run.sh("am", "force-stop", APP)
@@ -1026,7 +1026,7 @@ def main():
         time.sleep(3)
         copy = out / "screen.db"
         shutil.copyfile(run.record() / DATABASE, copy)
-        store = calltally.Store(copy)
+        store = reference.Store(copy)
         everything = store.totals()
         nodes = run.wait_for(lambda ns: (text_of(ns, "total_all") or "").endswith(row_value(everything)))
         month = run.adb("shell", "date", "+%Y-%m").strip()
@@ -1052,7 +1052,7 @@ def main():
         small, outside = screen_problems(nodes, density)
         check("every button on the month screen is at least 40dp tall and nothing reaches past the screen",
               not small and not outside, f"small {small[:3]} outside {outside[:3]}")
-        # Back to the seeded month: its day shows the call time and texts calltally.py counts for it.
+        # Back to the seeded month: its day shows the call time and texts the reference counts for it.
         seeded = day[:7]
         for _ in range(24):
             if text_of(nodes, "month_title") == datetime.strptime(seeded, "%Y-%m").strftime("%B %Y"):
@@ -1066,7 +1066,7 @@ def main():
         busy = store.range(day, day)["days"][day]
         words = f"{datetime.strptime(day, '%Y-%m-%d').strftime('%B')} {int(day[8:])}, call time {full_time(busy['call_s'])}, {plural(busy['texts'], 'text')}"
         cells = [n.get("content-desc") for n in by_id(nodes, "day_cell")]
-        check("the seeded month's total and its busy day match calltally.py", words in cells
+        check("the seeded month's total and its busy day match the reference", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
 
         # Who counts: Dana, unticked and no longer on the phone, shows unticked; a search with letters looks up names only.

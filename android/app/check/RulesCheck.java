@@ -10,7 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
-/** Prints what the rules, the id rule and the record's statements decide, for tests/test_calltally.py to compare with calltally.py. */
+/** Prints what the rules, the id rule and the record's statements decide, for tests/test_calltally.py to compare with tests/reference.py. */
 public class RulesCheck {
     public static void main(String[] args) {
         Map<String, String> work = Rules.countingNumbers(Arrays.asList(
@@ -355,7 +355,7 @@ public class RulesCheck {
 
     /**
      * The id rule and the repeat rule on fixed rows, added one at a time to a record kept in memory. The test adds the same
-     * rows to calltally.py's Store and compares the ids, the decisions and the rows left.
+     * rows to tests/reference.py's Store and compares the ids, the decisions and the rows left.
      */
     private static void ledger() {
         List<Rules.Entry> rows = Arrays.asList(

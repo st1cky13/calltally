@@ -2,7 +2,7 @@ package com.calltally.app;
 
 /**
  * The record's tables and the questions the screens ask of it. Plain text with no Android parts, so the checks can run
- * the same statements on a copy of the server's database and compare the answers with calltally.py's.
+ * the same statements on a copy of a reference record and compare the answers with tests/reference.py's.
  */
 final class Sql {
     private Sql() {}

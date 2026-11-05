@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * The record's one rule for ids and repeats, a copy of the server's entry_id, number_key and Store.add in calltally.py.
+ * The record's one rule for ids and repeats, a copy of entry_id, number_key and Store.add in tests/reference.py (kept
+ * from the retired server).
  * Plain Java with no Android parts: Record keeps the rows in SQLite, and the checks keep them in memory, through the
  * same add().
  */
