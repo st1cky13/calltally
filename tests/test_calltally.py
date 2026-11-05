@@ -187,6 +187,8 @@ class AndroidRulesTests(RecordCase):
         # Switch back opens the known, launchable previous messaging app; a missing or not-launchable one, an empty or
         # unknown setting, and Call Tally itself all fall back to the old Google Messages hand-back (null).
         self.assertEqual(rules["passthrough-handback"], "com.other.sms | null | null | null | null")
+        # The previous app is trusted only when captured fresh in the in-app flow; a stale (not fresh) value drops to null.
+        self.assertEqual(rules["passthrough-prevfresh"], "com.other.sms | null | null")
 
     def test_catch_up_result_wording(self):
         # The read result names the total found and the number new, so a "0 new" is not read as a failure. No parentheses.

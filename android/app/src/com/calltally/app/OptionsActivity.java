@@ -403,8 +403,11 @@ public class OptionsActivity extends Screen {
             public void onClick(View v) {
                 // Opens the app that was the default before Call Tally took the role (which then offers to become the
                 // default again), or, when it isn't known, Google Messages or a Settings screen where the owner picks it.
-                // It never changes the default itself; onResume/load re-reads the role when we return.
-                Intent intent = Roles.handBackIntent(OptionsActivity.this, Sync.preferences(OptionsActivity.this).getString("prev_sms", null));
+                // The stored previous app is trusted only when it was captured fresh in the in-app catch-up flow; otherwise
+                // we pass null and fall back, so this never opens a stale app. It never changes the default itself.
+                boolean fresh = Sync.preferences(OptionsActivity.this).getBoolean("prev_sms_fresh", false);
+                String prev = Passthrough.prevIfFresh(Sync.preferences(OptionsActivity.this).getString("prev_sms", null), fresh);
+                Intent intent = Roles.handBackIntent(OptionsActivity.this, prev);
                 if (intent == null) {
                     load();
                     return;
@@ -536,8 +539,14 @@ public class OptionsActivity extends Screen {
     @Override
     protected void onActivityResult(int code, int ignored, Intent data) {
         super.onActivityResult(code, ignored, data);
-        // After the switch-back dialog, redraw the still-the-messaging-app line from what the phone now reports.
-        if (code == SWITCH_BACK && !isFinishing()) load();
+        // After the switch-back dialog, redraw the still-the-messaging-app line from what the phone now reports. When the
+        // role was handed back, drop the fresh flag so a later Switch back can't reuse the captured previous app.
+        if (code == SWITCH_BACK && !isFinishing()) {
+            if (!Roles.holdsSmsRole(getApplicationContext())) {
+                Sync.preferences(getApplicationContext()).edit().putBoolean("prev_sms_fresh", false).commit();
+            }
+            load();
+        }
     }
 
     /** Reads the settings and the people away from the screen. */

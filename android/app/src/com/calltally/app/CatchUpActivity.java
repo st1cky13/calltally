@@ -160,13 +160,17 @@ public class CatchUpActivity extends Screen {
         settings.setVisibility(View.GONE);
         if (Roles.holdsSmsRole(this)) {
             // Call Tally already holds the role (the owner set it in Settings), so the real previous app can't be known
-            // now. Any stored prev_sms could be stale and send them to the wrong app, so clear it and let the hand-back
-            // use the Google Messages / default-apps settings route. The worst case is today's behaviour, never a wrong app.
-            Sync.preferences(this).edit().putString("prev_sms", null).commit();
+            // now. Clear any stored prev_sms and its fresh flag so the hand-back can't open a stale app and falls back to
+            // the Google Messages / default-apps settings route. The worst case is today's behaviour, never a wrong app.
+            Sync.preferences(this).edit().putString("prev_sms", null).putBoolean("prev_sms_fresh", false).commit();
             readThenHandBack();
             return;
         }
-        Sync.preferences(this).edit().putString("prev_sms", Roles.previousMessaging(this)).commit();
+        // The in-app flow: capture the real previous app now and mark it fresh, so only this takeover's value is trusted.
+        Sync.preferences(this).edit()
+            .putString("prev_sms", Roles.previousMessaging(this))
+            .putBoolean("prev_sms_fresh", true)
+            .commit();
         try {
             startActivityForResult(Roles.requestIntent(this), BECOME);
         } catch (RuntimeException error) {
@@ -188,7 +192,12 @@ public class CatchUpActivity extends Screen {
                 settings.setVisibility(View.VISIBLE);
             }
         } else if (code == HAND_BACK || code == SWITCH_BACK) {
-            if (!Roles.holdsSmsRole(this)) result.setText(Passthrough.DONE_BACK);
+            if (!Roles.holdsSmsRole(this)) {
+                // The role is handed back, so the captured previous app has been used up: drop the fresh flag so a later
+                // Switch back can't reuse a stale value.
+                Sync.preferences(this).edit().putBoolean("prev_sms_fresh", false).commit();
+                result.setText(Passthrough.DONE_BACK);
+            }
         }
         refresh();
     }
@@ -253,7 +262,9 @@ public class CatchUpActivity extends Screen {
      * return, onResume/refresh re-reads the role and hides the "still the messaging app" box.
      */
     private void handBack(int code) {
-        Intent intent = Roles.handBackIntent(this, Sync.preferences(this).getString("prev_sms", null));
+        boolean fresh = Sync.preferences(this).getBoolean("prev_sms_fresh", false);
+        String prev = Passthrough.prevIfFresh(Sync.preferences(this).getString("prev_sms", null), fresh);
+        Intent intent = Roles.handBackIntent(this, prev);
         if (intent == null) {
             refresh();
             return;

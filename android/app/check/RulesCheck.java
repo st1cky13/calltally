@@ -64,6 +64,11 @@ public class RulesCheck {
             + " | " + Passthrough.handBackTarget(null, true, "com.calltally.app")
             + " | " + Passthrough.handBackTarget("", true, "com.calltally.app")
             + " | " + Passthrough.handBackTarget("com.calltally.app", true, "com.calltally.app"));
+        // The previous app is trusted only when captured fresh in the in-app flow: fresh keeps it, not fresh drops it to
+        // null so the hand-back falls back instead of opening a stale app.
+        System.out.println("passthrough-prevfresh " + Passthrough.prevIfFresh("com.other.sms", true)
+            + " | " + Passthrough.prevIfFresh("com.other.sms", false)
+            + " | " + Passthrough.prevIfFresh(null, true));
     }
 
     /**

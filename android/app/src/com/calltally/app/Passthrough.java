@@ -87,6 +87,17 @@ final class Passthrough {
         return prev;
     }
 
+    /**
+     * The remembered previous app to trust for "Switch back", but only when it was captured fresh in the current in-app
+     * catch-up flow. prev is the stored package; fresh is the companion flag set only when become() recorded it just
+     * before asking for the role. When it is not fresh (the owner set Call Tally in Settings, or an earlier catch-up left
+     * a stale value), this returns null so the caller falls back to the Google Messages / default-apps settings route
+     * instead of opening a possibly-wrong app.
+     */
+    static String prevIfFresh(String prev, boolean fresh) {
+        return fresh ? prev : null;
+    }
+
     /** "Last caught up: Oct 26, 12:33 AM", or "Not yet" when it has not happened. at is in milliseconds, or 0. */
     static String lastCaughtUp(long at, Locale locale) {
         if (at <= 0) return "Not yet";
