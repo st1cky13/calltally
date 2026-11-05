@@ -14,6 +14,7 @@ import java.util.List;
 public class ContactsActivity extends Screen {
     private String from;
     private String to;
+    private TextView total;
     private TextView line;
     private LinearLayout rows;
     private TextView nothing;
@@ -26,10 +27,21 @@ public class ContactsActivity extends Screen {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(card);
-        line = text("", 14, muted, false);
+        String label = getIntent().getStringExtra("label");
+        if (label == null) label = "All time";
+        // The sheet's call time on top, named by its label, with the calls and texts it is made of under it.
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.VERTICAL);
+        head.setPadding(edge(), dp(10), edge(), dp(10));
+        head.addView(caption(label), wide());
+        total = text("", 22, txt, false);
+        total.setTypeface(medium());
+        figures(total);
+        head.addView(total, wide());
+        line = text("", 13, muted, false);
         line.setId(R.id.day_line);
-        line.setPadding(edge(), dp(10), edge(), dp(10));
-        page.addView(line, wide());
+        head.addView(line, wide());
+        page.addView(head, wide());
         page.addView(divider());
         rows = new LinearLayout(this);
         rows.setId(R.id.rows);
@@ -44,8 +56,7 @@ public class ContactsActivity extends Screen {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(list);
         page.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        String label = getIntent().getStringExtra("label");
-        frame(label == null ? "All time" : label, page, true);
+        frame(label, page, true);
         load();
     }
 
@@ -74,10 +85,12 @@ public class ContactsActivity extends Screen {
                     public void run() {
                         if (isDestroyed()) return;
                         if (trouble != null) {
+                            total.setVisibility(View.GONE);
                             line.setText(trouble);
                             return;
                         }
-                        line.setText(Words.summary(sums.callS, sums.calls, sums.texts));
+                        total.setText(Words.fullTime(sums.callS));
+                        line.setText(Words.counts(sums.calls, sums.texts));
                         show(found);
                     }
                 });
@@ -87,6 +100,12 @@ public class ContactsActivity extends Screen {
 
     private void show(List<Record.Totals> list) {
         rows.removeAllViews();
+        // The times form a column as wide as the longest one here.
+        String widest = "0s";
+        for (Record.Totals item : list) {
+            String time = Words.fullTime(item.callS);
+            if (time.length() > widest.length()) widest = time;
+        }
         for (Record.Totals item : list) {
             if (rows.getChildCount() > 0) rows.addView(divider());
             LinearLayout row = row();
@@ -96,12 +115,14 @@ public class ContactsActivity extends Screen {
             row.setMinimumHeight(dp(48));
             LinearLayout info = new LinearLayout(this);
             info.setOrientation(LinearLayout.VERTICAL);
-            info.addView(text(item.contact, 15, txt, true));
-            info.addView(text(Words.plural(item.calls, "call") + " · " + Words.plural(item.texts, "text"), 13, muted, false));
+            TextView who = text(item.contact, 15, txt, false);
+            who.setTypeface(medium());
+            info.addView(who);
+            info.addView(text(Words.counts(item.calls, item.texts), 13, muted, false));
             row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             TextView time = text(Words.fullTime(item.callS), 15, txt, false);
             time.setPadding(dp(10), 0, 0, 0);
-            timeColumn(time);
+            timeColumn(time, widest);
             row.addView(time);
             rows.addView(row);
         }

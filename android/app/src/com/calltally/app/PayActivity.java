@@ -2,12 +2,15 @@ package com.calltally.app;
 
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
+import android.text.style.MetricAffectingSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,7 +24,7 @@ import java.time.YearMonth;
 
 /**
  * Changing the pay period: a month of day buttons with arrows. The first tap picks the first day, the second its last day,
- * and the days between are shaded. Then the old and new start and period, with Revert, Reset and Confirm. Periods repeat
+ * and the days between are one band. Then the old and new start and period, with Revert, Reset and Confirm. Periods repeat
  * with the length picked. Reset turns pay periods off. Nothing is saved until Confirm.
  */
 public class PayActivity extends Screen {
@@ -117,7 +120,8 @@ public class PayActivity extends Screen {
         grid.setId(R.id.cal_grid);
         grid.setOrientation(LinearLayout.VERTICAL);
         column.addView(grid, wide());
-        review = text("", 14, muted, false);
+        // The start, as a small label over the period line, which says the most.
+        review = caption("");
         review.setId(R.id.review);
         figures(review);
         review.setVisibility(View.GONE);
@@ -314,7 +318,8 @@ public class PayActivity extends Screen {
     }
 
     private void drawCal() {
-        // The first and last day are highlighted and the days between shaded; nothing else.
+        // The first and last day are highlighted and the days between are one band; nothing else. The days sit side by side
+        // with no gap, so the band runs on unbroken; the filled days keep a little space at their sides instead.
         LocalDate shadeFrom = shownFirst(), shadeTo = shownLast();
         calTitle.setText(Words.monthTitle(view.getYear(), view.getMonthValue()));
         grid.removeAllViews();
@@ -328,14 +333,16 @@ public class PayActivity extends Screen {
             if (r > 0) rowParams.topMargin = dp(4);
             for (int c = 0; c < 7; c++, day++) {
                 LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, dp(44), 1);
-                if (c > 0) cellParams.leftMargin = dp(4);
                 if (day < 1 || day > count) {
                     row.addView(new View(this), cellParams);
                     continue;
                 }
                 LocalDate date = view.atDay(day);
                 boolean shaded = shadeTo != null && date.isAfter(shadeFrom) && date.isBefore(shadeTo);
-                row.addView(dayButton(date, shaded), cellParams);
+                // The band's ends in this row are round: at the row's edges, the month's edges, and beside a filled day.
+                boolean roundLeft = c == 0 || day == 1 || date.minusDays(1).equals(shadeFrom);
+                boolean roundRight = c == 6 || day == count || date.plusDays(1).equals(shadeTo);
+                row.addView(dayButton(date, shaded, roundLeft, roundRight), cellParams);
             }
             grid.addView(row, rowParams);
         }
@@ -354,7 +361,7 @@ public class PayActivity extends Screen {
         return latest;
     }
 
-    private Button dayButton(final LocalDate date, boolean shaded) {
+    private Button dayButton(final LocalDate date, boolean shaded, boolean roundLeft, boolean roundRight) {
         Button button = button(String.valueOf(date.getDayOfMonth()));
         button.setId(R.id.cal_day);
         button.setPadding(0, 0, 0, 0);
@@ -362,13 +369,22 @@ public class PayActivity extends Screen {
         button.setMinimumHeight(dp(44));
         button.setContentDescription(Words.longDay(date));
         figures(button);
-        // The first and last day are highlighted, the days between have a quiet tint, and the rest have no box; none
-        // after Reset.
+        // The first and last day are filled squares, the days between one band in a quiet tint, and the rest have no box;
+        // none after Reset.
         final LocalDate firstDay = shownFirst(), lastDay = shownLast();
         boolean isMarked = date.equals(firstDay) || date.equals(lastDay);
-        if (isMarked) filled(button);
-        else if (shaded) button.setBackground(touchable(shape((accent & 0x00ffffff) | 0x40000000, (accent & 0x00ffffff) | 0x80000000, 1, 8), 8));
-        else if (date.equals(today)) {
+        int side = dp(2);
+        if (isMarked) {
+            filled(button);
+            button.setBackground(new InsetDrawable(button.getBackground(), side, 0, side, 0));
+        } else if (shaded) {
+            // Round only at the band's ends in the row, and a little in from them, so it lines up with the filled days.
+            float r = dp(8), left = roundLeft ? r : 0, right = roundRight ? r : 0;
+            GradientDrawable strip = new GradientDrawable();
+            strip.setColor(band());
+            strip.setCornerRadii(new float[] {left, left, right, right, right, right, left, left});
+            button.setBackground(new InsetDrawable(touchable(strip, 8), roundLeft ? side : 0, 0, roundRight ? side : 0, 0));
+        } else if (date.equals(today)) {
             // Today, when not picked, has its number in the accent's circle, as on the month screen.
             button.setBackground(touchable(todayCircle(), 8));
             button.setTextColor(ink);
@@ -430,19 +446,19 @@ public class PayActivity extends Screen {
         } else if (ready) {
             // "Pay period: Oct 25 – Nov 7 → Nov 28 – Dec 11, 14 days"
             line.append("Pay period: ");
-            bold(line, saved == null ? "none" : saved.current(today));
+            value(line, saved == null ? "none" : saved.current(today));
             line.append(" → ");
-            bold(line, off ? "none" : picked().span(today));
+            value(line, off ? "none" : picked().span(today));
         } else if (saved != null) {
             line.append("Pay period ");
-            bold(line, saved.current(today) + ", " + Words.plural(saved.days, "day"));
+            value(line, saved.current(today) + ", " + Words.plural(saved.days, "day"));
         }
         preview.setText(line);
         if (!ready) return;
         SpannableStringBuilder text = new SpannableStringBuilder("Pay periods start: ");
-        bold(text, start == null ? "not set" : Words.weekdayDay(start, today));
+        strong(text, start == null ? "not set" : Words.weekdayDay(start, today));
         text.append(" → ");
-        bold(text, off ? "none" : Words.weekdayDay(chosen, today));
+        strong(text, off ? "none" : Words.weekdayDay(chosen, today));
         review.setText(text);
     }
 
@@ -451,11 +467,35 @@ public class PayActivity extends Screen {
         return new PayPeriod(chosen, (int) java.time.temporal.ChronoUnit.DAYS.between(chosen, chosenLast) + 1);
     }
 
-    private void bold(SpannableStringBuilder text, String value) {
+    /** A value in the label over the period line: in the text colour, the label's size and weight. */
+    private void strong(SpannableStringBuilder text, String value) {
         int from = text.length();
         text.append(value);
-        text.setSpan(new StyleSpan(Typeface.BOLD), from, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         text.setSpan(new ForegroundColorSpan(txt), from, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    /** A value in the period line: larger and semi-bold, in the text colour. */
+    private void value(SpannableStringBuilder text, String value) {
+        int from = text.length();
+        text.append(value);
+        text.setSpan(new ValueSpan(), from, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    /** 16sp semi-bold in the text colour, for the period line's values. */
+    private final class ValueSpan extends MetricAffectingSpan {
+        private final float size = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 16, getResources().getDisplayMetrics());
+
+        @Override
+        public void updateMeasureState(TextPaint paint) {
+            paint.setTextSize(size);
+            paint.setTypeface(medium());
+        }
+
+        @Override
+        public void updateDrawState(TextPaint paint) {
+            updateMeasureState(paint);
+            paint.setColor(txt);
+        }
     }
 
     private void save() {

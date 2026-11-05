@@ -38,6 +38,11 @@ final class Words {
         return fullTime(callS) + " on " + plural(calls, "call") + " · " + plural(texts, "text");
     }
 
+    /** "16 calls · 32 texts", for the line under a call time already shown large. */
+    static String counts(long calls, long texts) {
+        return plural(calls, "call") + " · " + plural(texts, "text");
+    }
+
     /** "3:08 PM" from a recorded clock time, yyyy-MM-dd HH:mm:ss. */
     static String clock(String at) {
         int h = Integer.parseInt(at.substring(11, 13));

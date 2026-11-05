@@ -441,6 +441,7 @@ abstract class Screen extends Activity {
     }
 
     void plain(Button button) {
+        button.setTag(R.id.quiet, null);
         button.setTextColor(txt);
         button.setTypeface(Typeface.DEFAULT);
         button.setBackground(touchable(shape(card2, line2, 1, 8)));
@@ -448,6 +449,7 @@ abstract class Screen extends Activity {
 
     /** A chosen button: filled with the accent. */
     void filled(Button button) {
+        button.setTag(R.id.quiet, null);
         button.setTextColor(ink);
         button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         button.setBackground(touchable(shape(accent, accent, 1, 8)));
@@ -455,6 +457,7 @@ abstract class Screen extends Activity {
 
     /** The same with corners of this radius, 24 for a pill; the touch has a mask of its own so it shows on the accent. */
     void filled(Button button, float radiusDp) {
+        button.setTag(R.id.quiet, null);
         button.setTextColor(ink);
         button.setTypeface(medium());
         button.setBackground(touchable(shape(accent, accent, 0, radiusDp), radiusDp));
@@ -471,6 +474,7 @@ abstract class Screen extends Activity {
     }
 
     private void quiet(Button button, int color, float sp) {
+        button.setTag(R.id.quiet, Boolean.TRUE);
         button.setTextColor(color);
         button.setTypeface(medium());
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
@@ -481,6 +485,7 @@ abstract class Screen extends Activity {
 
     /** A chosen theme: outlined with the accent. */
     void outlined(Button button) {
+        button.setTag(R.id.quiet, null);
         button.setTextColor(txt);
         button.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         button.setBackground(touchable(shape(card2, accent, 2, 8)));
@@ -492,6 +497,14 @@ abstract class Screen extends Activity {
      */
     int soft() {
         return (accent & 0x00ffffff) | (night() ? 0x33000000 : 0x22000000);
+    }
+
+    /**
+     * The fill of the days between a pay period's first and last day: one strip in the accent, a little stronger in Dark
+     * so it still shows on the dark page.
+     */
+    int band() {
+        return (accent & 0x00ffffff) | (night() ? 0x47000000 : 0x33000000);
     }
 
     /** A chevron in muted on a round touch, for moving between months and years. */
@@ -508,9 +521,10 @@ abstract class Screen extends Activity {
         return button;
     }
 
+    /** On or off. Off is dimmed; a quiet button, only a word, dims further so it reads as plainly off. */
     static void enable(View view, boolean on) {
         view.setEnabled(on);
-        view.setAlpha(on ? 1f : 0.45f);
+        view.setAlpha(on ? 1f : Boolean.TRUE.equals(view.getTag(R.id.quiet)) ? 0.38f : 0.45f);
     }
 
     /** A thin line between rows. */

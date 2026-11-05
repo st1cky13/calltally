@@ -46,7 +46,7 @@ public class DayActivity extends Screen {
         head.setOrientation(LinearLayout.VERTICAL);
         head.setBackgroundColor(card);
         head.setPadding(edge(), dp(10), edge(), dp(10));
-        // The day's call time, large, with the summary line under it saying what it is made of.
+        // The day's call time, large, with the calls and texts it is made of under it.
         total = text("", 28, txt, false);
         total.setTypeface(medium());
         figures(total);
@@ -156,7 +156,7 @@ public class DayActivity extends Screen {
                         widest = widest(found);
                         total.setVisibility(View.VISIBLE);
                         total.setText(Words.fullTime(sums == null ? 0 : sums.callS));
-                        line.setText(sums == null ? Words.summary(0, 0, 0) : Words.summary(sums.callS, sums.calls, sums.texts));
+                        line.setText(sums == null ? Words.counts(0, 0) : Words.counts(sums.calls, sums.texts));
                         if (tab == null) {
                             // The tab last chosen when it has anything, otherwise Calls if the day has a call, else Texts.
                             tab = chosenTab != null && has(chosenTab) ? chosenTab : has("call") ? "call" : "text";

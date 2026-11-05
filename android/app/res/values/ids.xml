@@ -83,4 +83,6 @@
     <item type="id" name="still_default" />
     <item type="id" name="switch_back" />
     <item type="id" name="version_line" />
+    <!-- A tag, not a part: marks a quiet button, which dims further when off. -->
+    <item type="id" name="quiet" />
 </resources>

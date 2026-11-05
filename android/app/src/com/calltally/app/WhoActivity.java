@@ -2,10 +2,12 @@ package com.calltally.app;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -13,6 +15,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -85,7 +88,13 @@ public class WhoActivity extends Screen {
         search.setHint("Search by name or number");
         search.setTextColor(txt);
         search.setHintTextColor(muted);
-        search.setBackgroundTintList(android.content.res.ColorStateList.valueOf(accent));
+        // A rounded box with a magnifier at its start.
+        search.setBackground(shape(card, line, 1, 12));
+        search.setPadding(dp(12), dp(12), dp(12), dp(12));
+        Drawable glass = getDrawable(R.drawable.search).mutate();
+        glass.setTint(muted);
+        search.setCompoundDrawablesRelativeWithIntrinsicBounds(glass, null, null, null);
+        search.setCompoundDrawablePadding(dp(8));
         search.setMinHeight(dp(48));
         search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -102,6 +111,7 @@ public class WhoActivity extends Screen {
             }
         });
         tickAll = button("Tick all shown");
+        quiet(tickAll);
         enable(tickAll, false);
         tickAll.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -114,8 +124,11 @@ public class WhoActivity extends Screen {
         adapter = new Adapter();
         list.setAdapter(adapter);
         page.addView(note);
-        page.addView(search);
-        page.addView(tickAll);
+        page.addView(search, wide());
+        // A quiet word at the right under the box, as it acts on what the search shows.
+        LinearLayout.LayoutParams tickAllPlace = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tickAllPlace.gravity = Gravity.END;
+        page.addView(tickAll, tickAllPlace);
         list.setDivider(new android.graphics.drawable.ColorDrawable(line));
         list.setDividerHeight(Math.max(1, dp(1)));
         page.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -337,22 +350,30 @@ public class WhoActivity extends Screen {
 
         @Override
         public View getView(int position, View view, ViewGroup parent) {
-            LinearLayout row = (LinearLayout) view;
+            FrameLayout row = (FrameLayout) view;
             if (row == null) {
-                row = new LinearLayout(WhoActivity.this);
-                row.setOrientation(LinearLayout.VERTICAL);
-                row.setPadding(0, gap / 4, 0, gap / 4);
+                // The tick box covers the whole row, name and numbers, so a tap anywhere on them ticks it. The name sits
+                // level with the box and the numbers just under it, both from the name's left edge.
+                row = new FrameLayout(WhoActivity.this);
+                row.setPadding(0, dp(14), 0, dp(14));
                 CheckBox box = new CheckBox(WhoActivity.this);
                 box.setTextSize(16);
                 box.setTextColor(txt);
-                box.setMinHeight(dp(44));
+                box.setGravity(Gravity.TOP | Gravity.START);
                 box.setButtonTintList(new android.content.res.ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {accent, muted}));
                 TextView detail = new TextView(WhoActivity.this);
                 detail.setTextSize(13);
                 detail.setTextColor(muted);
-                detail.setPadding(dp(32), 0, 0, 0);
-                row.addView(box);
-                row.addView(detail);
+                Drawable tick = box.getButtonDrawable();
+                int name = box.getLineHeight();
+                int above = tick == null ? 0 : Math.max(0, (tick.getIntrinsicHeight() - name) / 2);
+                box.setPadding(box.getPaddingLeft(), above, box.getPaddingRight(), detail.getLineHeight());
+                box.setMinHeight(dp(44));
+                detail.setPadding(box.getCompoundPaddingLeft(), 0, 0, 0);
+                FrameLayout.LayoutParams under = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                under.topMargin = above + name;
+                row.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                row.addView(detail, under);
             }
             CheckBox box = (CheckBox) row.getChildAt(0);
             TextView detail = (TextView) row.getChildAt(1);
