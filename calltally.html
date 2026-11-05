@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Call Tally</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f6b5c'/%3E%3Ctext x='9' y='22' font-family='monospace' font-weight='700' font-size='16' fill='%23fff'%3Ec%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#f4f7f6;--card:#fff;--card2:#eef3f2;--line:#dde6e4;--line2:#c4d3d0;--txt:#14201e;--muted:#46585a;
+    --accent:#0f6b5c;--accent-ink:#fff;--tint:rgba(15,107,92,.09);--loss:#c23a3a;--loss-t:rgba(194,58,58,.10);
+    --scrim:rgba(10,20,18,.45);--shadow:0 14px 40px rgba(10,40,35,.18);color-scheme:light;
+    --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --sab:env(safe-area-inset-bottom,0px)}
+  @media (prefers-color-scheme: dark){:root{--bg:#0c1312;--card:#14201e;--card2:#1a2826;--line:#24342f;--line2:#33483f;
+    --txt:#e6f0ed;--muted:#a5b8b3;--accent:#4fd1b5;--accent-ink:#04211b;--tint:rgba(79,209,181,.12);--loss:#ff7b7b;--loss-t:rgba(255,123,123,.12);
+    --scrim:rgba(0,0,0,.6);--shadow:0 18px 50px rgba(0,0,0,.5);color-scheme:dark}}
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  html{-webkit-text-size-adjust:100%;background:var(--bg)}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 var(--body);overflow-x:hidden}
+  header{position:sticky;top:0;z-index:5;background:var(--accent);color:var(--accent-ink);padding:10px 16px;display:flex;align-items:center;gap:10px}
+  header b{font-size:16px;letter-spacing:.02em}
+  #updated{margin-left:auto;font-size:14px;border-radius:20px;padding:2px 10px;white-space:nowrap}
+  #updated.stale{background:#f3c25a;color:#2b1d00;font-weight:600}
+  main{max-width:900px;margin:0 auto;padding:12px 16px calc(40px + var(--sab));display:grid;gap:14px}
+  #problem{background:var(--loss-t);color:var(--loss);border:1px solid var(--loss);border-radius:10px;padding:8px 12px}
+  #empty{color:var(--muted);text-align:center;padding:4px}
+  .month{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;min-width:0}
+  .month h2{padding:2px 4px 0}
+  .month h2{margin:0 0 10px;font-size:16px}
+  .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+  .week{margin-bottom:4px;color:var(--muted);font-size:12px;text-align:center}
+  .day{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--card2);border:1px solid transparent;border-radius:8px;
+    min-height:68px;padding:4px;display:flex;flex-direction:column;gap:1px;min-width:0;overflow:hidden}
+  .day .n{font-size:12px;color:var(--muted)}
+  .day .t{font:600 12px/1.2 var(--body);font-variant-numeric:tabular-nums}
+  .day .x{font-size:11px;line-height:1.2;color:var(--muted)}
+  .day.filled{background:var(--tint);border-color:var(--line2);cursor:pointer}
+  .day.filled:hover{border-color:var(--accent)}
+  .day:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .day.today{border-color:var(--accent);border-width:2px;padding:3px}
+  .day.today .n{color:var(--accent);font-weight:700}
+  .day.future{opacity:.45}
+  .gap{min-height:68px}
+  @media (min-width:640px){.day,.gap{min-height:84px}.day{padding:7px}.day.today{padding:6px}.day .n{font-size:13px}.day .t{font-size:14px}.day .x{font-size:13px}}
+  #more{height:1px}
+  dialog{border:1px solid var(--line2);border-radius:14px;background:var(--card);color:var(--txt);box-shadow:var(--shadow);padding:0;
+    width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 32px)}
+  dialog::backdrop{background:var(--scrim)}
+  .head{position:sticky;top:0;z-index:1;background:var(--card);border-bottom:1px solid var(--line);padding:12px 14px;display:flex;align-items:flex-start;gap:10px}
+  .head h2{margin:0;font-size:16px}
+  .head p{margin:2px 0 0;color:var(--muted);font-size:14px}
+  .btn{font:inherit;font-size:14px;color:var(--txt);background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;min-height:36px;cursor:pointer;white-space:nowrap}
+  .btn:disabled{opacity:.55;cursor:default}
+  #close{margin-left:auto}
+  #rows{list-style:none;margin:0;padding:0}
+  #rows li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+  #rows li:last-child{border-bottom:0}
+  .who{font-weight:600;overflow-wrap:anywhere}
+  .what{color:var(--muted);font-size:13px}
+  .len{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  #rows li.gone .who,#rows li.gone .what,#rows li.gone .len{opacity:.55;text-decoration:line-through}
+  #none{padding:18px 14px;color:var(--muted);margin:0}
+</style>
+</head>
+<body>
+<header><b>Call Tally</b><span id="updated"></span></header>
+<main id="main">
+  <div id="problem" hidden></div>
+  <div id="empty" hidden>No work calls or texts yet.</div>
+  <div id="more"></div>
+</main>
+<dialog id="sheet" aria-labelledby="sheetTitle">
+  <div class="head">
+    <div><h2 id="sheetTitle"></h2><p id="sheetTotals"></p></div>
+    <button class="btn" id="close" type="button">Close</button>
+  </div>
+  <p id="none" hidden>Nothing on this day.</p>
+  <ul id="rows"></ul>
+</dialog>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const main = $("main"), more = $("more"), sheet = $("sheet");
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const WEEK = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const pad = n => String(n).padStart(2, "0");
+const dayKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+
+const opened = new Date();
+const firstMonth = {y: opened.getFullYear(), m: opened.getMonth()};
+let next = {...firstMonth};      // the next older month to draw
+let oldestDrawn = null;          // day key of the first day drawn
+let earliest = null;             // first day with any data
+let openDay = null;
+let loading = false;
+const cells = new Map();
+
+function todayKey(){const d = new Date(); return dayKey(d.getFullYear(), d.getMonth(), d.getDate());}
+function lastDayKey(y, m){return dayKey(y, m, new Date(y, m + 1, 0).getDate());}
+
+function shortTime(s){
+  if (s < 60) return `${s}s`;
+  const mins = Math.round(s / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${pad(mins % 60)}m`;
+}
+function fullTime(s){
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  if (h) return `${h}h ${pad(m)}m ${pad(sec)}s`;
+  if (m) return `${m}m ${pad(sec)}s`;
+  return `${sec}s`;
+}
+function clock(at){
+  const [h, m] = at.slice(11, 16).split(":").map(Number);
+  return `${h % 12 || 12}:${pad(m)} ${h < 12 ? "AM" : "PM"}`;
+}
+function plural(n, word){return `${n} ${word}${n === 1 ? "" : "s"}`;}
+function showProblem(text){$("problem").textContent = text; $("problem").hidden = !text;}
+
+async function api(path, body){
+  const options = body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {};
+  const reply = await fetch(path, options);
+  if (!reply.ok) throw new Error(`The server said ${reply.status}.`);
+  return reply.json();
+}
+
+function drawMonth(y, m){
+  const section = document.createElement("section");
+  section.className = "month";
+  const title = document.createElement("h2");
+  title.textContent = `${MONTHS[m]} ${y}`;
+  const week = document.createElement("div");
+  week.className = "week";
+  for (const name of WEEK){const s = document.createElement("span"); s.textContent = name; week.append(s);}
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  for (let i = new Date(y, m, 1).getDay(); i > 0; i--){const g = document.createElement("div"); g.className = "gap"; grid.append(g);}
+  const count = new Date(y, m + 1, 0).getDate();
+  for (let d = 1; d <= count; d++){
+    const key = dayKey(y, m, d);
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "day";
+    cell.disabled = true;
+    cell.dataset.day = key;
+    cell.addEventListener("click", () => openSheet(key));
+    cells.set(key, cell);
+    fillCell(cell, null);
+    grid.append(cell);
+  }
+  section.append(title, week, grid);
+  main.insertBefore(section, more);
+}
+
+function fillCell(cell, data){
+  const key = cell.dataset.day, today = todayKey();
+  const used = !!data && (data.calls + data.texts + data.deleted) > 0;
+  cell.className = "day" + (used ? " filled" : "") + (key === today ? " today" : "") + (key > today ? " future" : "");
+  cell.disabled = !used;
+  const number = document.createElement("span");
+  number.className = "n";
+  number.textContent = Number(key.slice(8));
+  const parts = [number];
+  const words = [`${MONTHS[Number(key.slice(5, 7)) - 1]} ${Number(key.slice(8))}`];
+  if (data && data.calls){
+    const t = document.createElement("span");
+    t.className = "t";
+    t.textContent = shortTime(data.call_s);
+    parts.push(t);
+    words.push(`call time ${fullTime(data.call_s)}`);
+  }
+  if (data && data.texts){
+    const x = document.createElement("span");
+    x.className = "x";
+    x.textContent = plural(data.texts, "text");
+    parts.push(x);
+    words.push(plural(data.texts, "text"));
+  }
+  if (used && !data.calls && !data.texts){
+    const x = document.createElement("span");
+    x.className = "x";
+    x.textContent = "deleted";
+    parts.push(x);
+    words.push("deleted entries only");
+  }
+  cell.replaceChildren(...parts);
+  cell.setAttribute("aria-label", words.join(", "));
+}
+
+function showUpdated(last){
+  const el = $("updated");
+  if (!last){el.textContent = "No uploads yet"; el.className = "stale"; return;}
+  const mins = Math.max(0, Math.round((Date.now() - new Date(last).getTime()) / 60000));
+  el.textContent = mins < 1 ? "Updated just now" : mins < 60 ? `Updated ${mins} min ago`
+    : mins < 2880 ? `Updated ${Math.round(mins / 60)} hr ago` : `Updated ${Math.round(mins / 1440)} days ago`;
+  el.className = mins > 180 ? "stale" : "";
+}
+
+async function refresh(){
+  if (!oldestDrawn) return;
+  const data = await api(`/api/range?from=${oldestDrawn}&to=${lastDayKey(firstMonth.y, firstMonth.m)}`);
+  earliest = data.earliest;
+  for (const [key, cell] of cells) fillCell(cell, data.days[key] || null);
+  $("empty").hidden = !!earliest;
+  showUpdated(data.last_upload);
+}
+
+function needsMore(){
+  if (cells.size === 0) return true;
+  return !!earliest && lastDayKey(next.y, next.m) >= earliest;
+}
+
+async function loadOlder(){
+  if (loading || !needsMore()) return;
+  loading = true;
+  try {
+    const {y, m} = next;
+    drawMonth(y, m);
+    oldestDrawn = dayKey(y, m, 1);
+    next = m === 0 ? {y: y - 1, m: 11} : {y, m: m - 1};
+    await refresh();
+    showProblem("");
+  } catch (error){
+    showProblem(`Could not load the calendar. ${error.message}`);
+  } finally {
+    loading = false;
+  }
+  // A short calendar may leave the marker on screen, with no scroll to come.
+  if (markerNear()) loadOlder();
+}
+
+function markerNear(){return more.getBoundingClientRect().top < innerHeight + 600;}
+
+function statusWords(entry){
+  const named = {in: "incoming", out: "outgoing", missed: "missed", rejected: "declined"}[entry.direction];
+  if (entry.kind === "call") return `${clock(entry.at)} · ${named} call`;
+  return `${clock(entry.at)} · ${entry.direction === "in" ? "text received" : "text sent"}`;
+}
+
+async function openSheet(key){
+  openDay = key;
+  const when = new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8)));
+  $("sheetTitle").textContent = `${WEEKDAYS[when.getDay()]}, ${MONTHS[when.getMonth()]} ${when.getDate()}, ${when.getFullYear()}`;
+  $("sheetTotals").textContent = "";
+  $("rows").replaceChildren();
+  $("none").hidden = true;
+  if (!sheet.open) sheet.showModal();
+  await drawSheet(key);
+}
+
+async function drawSheet(key){
+  let data;
+  try {
+    data = await api(`/api/day?day=${key}`);
+  } catch (error){
+    if (openDay === key) $("sheetTotals").textContent = `Could not load this day. ${error.message}`;
+    return;
+  }
+  if (openDay !== key) return;
+  const live = data.entries.filter(e => !e.deleted_at);
+  const calls = live.filter(e => e.kind === "call");
+  const seconds = calls.reduce((sum, e) => sum + e.duration_s, 0);
+  const texts = live.length - calls.length;
+  $("sheetTotals").textContent = `${fullTime(seconds)} on ${plural(calls.length, "call")} · ${plural(texts, "text")}`;
+  $("none").hidden = data.entries.length > 0;
+  $("rows").replaceChildren(...data.entries.map(entry => drawRow(entry, key)));
+}
+
+function drawRow(entry, key){
+  const row = document.createElement("li");
+  if (entry.deleted_at) row.className = "gone";
+  const info = document.createElement("div");
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = entry.contact;
+  const what = document.createElement("div");
+  what.className = "what";
+  what.textContent = statusWords(entry);
+  info.append(who, what);
+  const length = document.createElement("div");
+  length.className = "len";
+  length.textContent = entry.kind === "call" ? fullTime(entry.duration_s) : "";
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "btn";
+  action.textContent = entry.deleted_at ? "Restore" : "Delete";
+  action.setAttribute("aria-label", `${action.textContent} ${entry.contact} at ${clock(entry.at)}`);
+  action.addEventListener("click", async () => {
+    action.disabled = true;
+    try {
+      await api(entry.deleted_at ? "/api/restore" : "/api/delete", {id: entry.id});
+      await drawSheet(key);
+      await refresh();
+    } catch (error){
+      action.disabled = false;
+      $("sheetTotals").textContent = `That did not save. ${error.message}`;
+    }
+  });
+  row.append(info, length, action);
+  return row;
+}
+
+$("close").addEventListener("click", () => sheet.close());
+sheet.addEventListener("click", event => {if (event.target === sheet) sheet.close();});
+sheet.addEventListener("close", () => {openDay = null;});
+
+async function tick(){
+  const now = new Date();
+  if (now.getFullYear() !== firstMonth.y || now.getMonth() !== firstMonth.m){location.reload(); return;}
+  try {
+    await refresh();
+    showProblem("");
+    // The first history may have arrived after the page opened, or the first load may have failed.
+    if (markerNear()) loadOlder();
+  }
+  catch (error){showProblem(`Could not reach the server. ${error.message}`);}
+}
+setInterval(tick, 60000);
+document.addEventListener("visibilitychange", () => {if (!document.hidden) tick();});
+
+addEventListener("scroll", () => {if (markerNear()) loadOlder();}, {passive: true});
+addEventListener("resize", () => {if (markerNear()) loadOlder();});
+loadOlder();
+</script>
+</body>
+</html>

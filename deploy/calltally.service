@@ -1,0 +1,29 @@
+# User-level systemd unit. Assumes a clone at ~/local/calltally; Python 3.11 or newer, standard library only.
+#
+#   cp deploy/calltally.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now calltally.service
+#   tailscale serve --bg --https=8444 http://127.0.0.1:8093
+#
+# Logs:  journalctl --user -u calltally -f
+
+[Unit]
+Description=calltally - private calendar of work calls and texts
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/local/calltally
+ExecStart=/usr/bin/python3 %h/local/calltally/calltally.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+MemoryMax=150M
+
+[Install]
+WantedBy=default.target
