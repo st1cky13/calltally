@@ -22,6 +22,7 @@ final class Sync {
     static final int JOB_CHANGES = 2;
     private static final long PERIOD_MS = 15 * 60 * 1000L;
     static final String NOT_ALLOWED = "Needs permission. Open this app to allow it.";
+    static final String NOBODY = "Nobody is ticked yet. Tap the gear, then Who counts, to choose the people who count.";
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
 
     private Sync() {}
@@ -87,10 +88,58 @@ final class Sync {
         return !prefs(context).contains("status");
     }
 
-    /** The run's result for the screen. Saved at once, since the emulator check reads it as soon as the run ends. */
-    private static void note(Context context, String text) {
+    /**
+     * The run's result for Options, and the problem the month screen shows, or none. Saved at once, since the emulator
+     * check reads it as soon as the run ends.
+     */
+    private static void note(Context context, String text, String problem) {
         String when = new java.text.SimpleDateFormat("MMM d, h:mm a", Locale.US).format(new java.util.Date());
-        prefs(context).edit().putString("status", when + "\n" + text).commit();
+        SharedPreferences.Editor edit = prefs(context).edit().putString("status", when + "\n" + text).remove("clean_at");
+        if (problem == null || problem.isEmpty()) edit.remove("problem");
+        else edit.putString("problem", problem);
+        edit.commit();
+    }
+
+    /**
+     * A run that read the phone. Opening the app can start two runs one after the other (the periodic job and the first
+     * open), and the second finds nothing new; within a minute of a clean run, a clean run that added nothing keeps the
+     * first one's words, so the status still says what came in.
+     */
+    private static void noteRead(Context context, String text, String problem, int added) {
+        SharedPreferences saved = prefs(context);
+        long now = System.currentTimeMillis();
+        boolean clean = problem.isEmpty();
+        long cleanAt = saved.getLong("clean_at", 0);
+        if (clean && added == 0 && cleanAt > 0 && now - cleanAt < 60000 && saved.contains("status")) {
+            saved.edit().putLong("updated_at", now).remove("problem").commit();
+            return;
+        }
+        note(context, text, problem);
+        SharedPreferences.Editor edit = saved.edit().putLong("updated_at", now);
+        if (clean) edit.putLong("clean_at", now);
+        edit.commit();
+    }
+
+    /** When a run last read the phone, or 0. */
+    static long updatedAt(Context context) {
+        return prefs(context).getLong("updated_at", 0);
+    }
+
+    /** What the month screen's red box says: the last run's problem, a schedule problem or a crash, or null. */
+    static String problem(Context context) {
+        SharedPreferences saved = prefs(context);
+        StringBuilder out = new StringBuilder();
+        String problem = saved.getString("problem", null);
+        String schedule = saved.getString("schedule_problem", null);
+        String crash = saved.getString("crash", null);
+        if (problem != null) out.append(problem);
+        if (schedule != null) out.append(out.length() > 0 ? "\n" : "").append("Background runs aren't set up: ").append(schedule);
+        if (crash != null) out.append(out.length() > 0 ? "\n" : "").append("Last crash: ").append(crash);
+        return out.length() == 0 ? null : out.toString();
+    }
+
+    static SharedPreferences preferences(Context context) {
+        return prefs(context);
     }
 
     static void schedule(Context context) {
@@ -140,7 +189,7 @@ final class Sync {
         try {
             prefs(context).edit().putLong("run_started", started).commit();
             if (!allowed(context)) {
-                note(context, NOT_ALLOWED);
+                note(context, NOT_ALLOWED, NOT_ALLOWED);
                 return true;
             }
             Record record = Record.get(context);
@@ -155,7 +204,7 @@ final class Sync {
             }
             Map<String, String> counting = record.countingNumbers();
             if (counting.isEmpty()) {
-                note(context, "Nobody is ticked yet. Open Who counts to choose the people who count.");
+                note(context, NOBODY, NOBODY);
                 prefs(context).edit().remove("crash").apply();
                 return true;
             }
@@ -166,23 +215,26 @@ final class Sync {
             int other = collector.otherCalls();
             int people = 0;
             for (Rules.Person person : record.people()) if (person.ticked) people++;
-            note(context, (found.size() - added.unusable) + " calls and texts with " + people + (people == 1 ? " ticked person" : " ticked people")
+            // What the month screen's red box shows: texts or calls that couldn't be read, contacts that couldn't be read.
+            String problems = problem + (contactsLine.isEmpty() ? "" : (problem.isEmpty() ? "" : "\n") + contactsLine.trim());
+            noteRead(context, (found.size() - added.unusable) + " calls and texts with " + people + (people == 1 ? " ticked person" : " ticked people")
                 + " found, " + added.added + " new in the record."
                 + (problem.isEmpty() ? "" : "\n" + problem)
                 + contactsLine
                 + (added.unusable > 0 ? "\n" + added.unusable + " couldn't be used and were skipped." : "")
                 + (other == 0 ? "" : other == 1 ? "\nSkipped 1 call of another kind." : "\nSkipped " + other + " calls of other kinds.")
                 + "\n" + collector.groups() + " group chats with ticked people."
-                + (collector.conversationListWorked() ? "" : "\nConversation list unavailable, using messages instead."));
+                + (collector.conversationListWorked() ? "" : "\nConversation list unavailable, using messages instead."), problems, added.added);
             prefs(context).edit().remove("crash").apply();
         } catch (Record.TooNew error) {
-            note(context, error.getMessage());
+            note(context, error.getMessage(), error.getMessage());
         } catch (SecurityException error) {
-            note(context, NOT_ALLOWED);
+            note(context, NOT_ALLOWED, NOT_ALLOWED);
         } catch (Collector.Problem error) {
-            note(context, error.getMessage());
+            note(context, error.getMessage(), error.getMessage());
         } catch (RuntimeException error) {
-            note(context, "Something went wrong: " + error.getClass().getSimpleName());
+            String text = "Something went wrong: " + error.getClass().getSimpleName();
+            note(context, text, text);
         } finally {
             try {
                 // Which run finished last, by the moment it started: the emulator check waits on this.

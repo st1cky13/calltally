@@ -5,15 +5,19 @@
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <application android:label="Call Tally Sync" android:icon="@drawable/icon" android:allowBackup="false"
+    <application android:label="Call Tally" android:icon="@drawable/icon" android:allowBackup="false"
         android:debuggable="__DEBUGGABLE__"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Teal">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".DayActivity" android:exported="false" />
+        <activity android:name=".ContactsActivity" android:exported="false" />
+        <activity android:name=".OptionsActivity" android:exported="false" android:label="Options" />
+        <activity android:name=".PayActivity" android:exported="false" android:label="Pay periods" />
         <activity android:name=".WhoActivity" android:exported="false" android:label="Who counts" />
         <service android:name=".SyncJob" android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />

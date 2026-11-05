@@ -4,8 +4,10 @@
 Starts the emulator, builds and installs a test copy of the app (CALLTALLY_DEBUG=true: debuggable, with the test hook),
 seeds contacts, calls and messages, ticks Dana-Work and Sam - Work through the test hook, runs the app and copies its record
 off the emulator to check it with sqlite3 against what calltally.py would have kept. Then it unticks Dana, ticks her again
-and deletes her contact, checking that nothing is ever lost, and takes the app's permissions away. Prints one pass or fail
-line per check, exits 1 on any fail, and always stops the emulator and adb.
+and deletes her contact, checking that nothing is ever lost, and takes the app's permissions away. Last it opens the month
+screen and reads it with uiautomator: the title, the three totals rows and the grid, counted as calltally.py counts the
+record, with every button at least 40dp tall. Prints one pass or fail line per check, exits 1 on any fail, and always
+stops the emulator and adb.
 
 Usage: python3 tools/emulator_check.py [--out FOLDER]   (default: a new folder under $TMPDIR)
 Needs the Android tools in ~/local/calltally-build (see android/app/build.sh) and the AVD "ct". Takes a few minutes.
@@ -22,7 +24,7 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ElementTree
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -247,19 +249,82 @@ class Run:
                 "--where", f"_id={self.raw[name]}")
         return self.sh("content", "query", "--uri", "content://com.android.contacts/data/phones", "--projection", "data1")
 
-    def screen_text(self):
-        """The text on the app's screen, read from the screen itself."""
-        for _ in range(3):
+    def nodes(self):
+        """The screen's parts from uiautomator, or [] when it couldn't be read."""
+        for _ in range(4):
             self.adb("shell", "uiautomator", "dump", "/sdcard/ui.xml", check=False)
             raw = self.adb("exec-out", "cat", "/sdcard/ui.xml", check=False, binary=True)
             try:
-                return " ".join(n.get("text", "") for n in ElementTree.fromstring(raw).iter("node"))
+                return list(ElementTree.fromstring(raw).iter("node"))
             except ElementTree.ParseError:
                 time.sleep(2)
-        return ""
+        return []
+
+    def wait_for(self, ready, seconds=60):
+        """Reads the screen until ready(nodes) holds. Returns the last nodes read."""
+        deadline = time.time() + seconds
+        nodes = []
+        while time.time() < deadline:
+            nodes = self.nodes()
+            if ready(nodes):
+                break
+            time.sleep(1)
+        return nodes
+
+    def tap(self, node):
+        (left, top), (right, bottom) = bounds(node)
+        self.sh("input", "tap", (left + right) // 2, (top + bottom) // 2)
+
+    def density(self):
+        out = self.adb("shell", "wm", "density")
+        values = [int(part.split(":")[1]) for part in out.strip().splitlines() if ":" in part]
+        return values[-1] / 160
 
     def device_zone(self):
         return self.adb("shell", "getprop", "persist.sys.timezone").strip() or "UTC"
+
+
+def bounds(node):
+    left, top, right, bottom = (int(v) for v in node.get("bounds").replace("][", ",").strip("[]").split(","))
+    return (left, top), (right, bottom)
+
+
+def by_id(nodes, name):
+    return [n for n in nodes if n.get("resource-id") == f"{APP}:id/{name}"]
+
+
+def text_of(nodes, name):
+    found = by_id(nodes, name)
+    return found[0].get("text", "") if found else None
+
+
+def full_time(s):
+    """The screens' full form of a call time, as Words.fullTime writes it."""
+    h, m, sec = s // 3600, s % 3600 // 60, s % 60
+    return f"{h}h {m:02d}m {sec:02d}s" if h else f"{m}m {sec:02d}s" if m else f"{sec}s"
+
+
+def plural(n, word):
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def row_value(totals):
+    return f"{full_time(totals['call_s'])} · {plural(totals['calls'], 'call')} · {plural(totals['texts'], 'text')}"
+
+
+def screen_problems(nodes, density):
+    """Buttons under 40dp tall, and parts reaching past the screen's sides."""
+    width = max(bounds(n)[1][0] for n in nodes) if nodes else 0
+    small, outside = [], []
+    for n in nodes:
+        if n.get("package") != APP:
+            continue
+        (left, top), (right, bottom) = bounds(n)
+        if n.get("clickable") == "true" and bottom - top < 40 * density - 1:
+            small.append(f"{n.get('class').split('.')[-1]} {n.get('text') or n.get('content-desc')!r} {bottom - top}px")
+        if left < 0 or right > width:
+            outside.append(f"{n.get('text') or n.get('resource-id')} {n.get('bounds')}")
+    return small, outside
 
 
 def rows(folder, table="entries", order="epoch,id"):
@@ -383,11 +448,6 @@ def main():
         # Scheduling the periodic job can start a second run at once, which finds the same and adds nothing new.
         check("the run's status is clean", f"{len(want)} calls and texts with 2 ticked people found, " in status
               and " new in the record." in status and "couldn't" not in status and "wrong" not in status, status)
-        run.sh("am", "start", "-n", f"{APP}/.MainActivity")
-        time.sleep(3)
-        screen = run.screen_text()
-        check("the status screen shows the record", f"The record holds {len(need)} entries. 2 people are ticked." in screen,
-              screen[:300])
 
         # Run 2: Dana unticked, and a new call from her. Nothing goes and nothing of hers comes in.
         answer = run.tick([DANA1], untick=True)
@@ -443,6 +503,58 @@ def main():
         check("with no access the record is unchanged and the status says the app isn't allowed",
               rows(run.record()) == latest and status.endswith(NOT_ALLOWED), status)
         check("group message seeded" if groups else "group message not seeded (provider refused)", True)
+
+        # The month screen, opened with everything allowed again: the month's title, its three totals rows and its grid,
+        # counted as calltally.py counts the same record.
+        for permission in PERMISSIONS:
+            run.sh("pm", "grant", APP, permission)
+        run.sh("am", "force-stop", APP)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        copy = out / "screen.db"
+        shutil.copyfile(run.record() / DATABASE, copy)
+        store = calltally.Store(copy)
+        everything = store.totals()
+        nodes = run.wait_for(lambda ns: (text_of(ns, "total_all") or "").endswith(row_value(everything)))
+        month = run.adb("shell", "date", "+%Y-%m").strip()
+        year, number = int(month[:4]), int(month[5:])
+        name = datetime(year, number, 1).strftime("%B")
+        last = (datetime(year + number // 12, number % 12 + 1, 1) - datetime(year, number, 1)).days
+        check("the month screen opens on this month", text_of(nodes, "month_title") == f"{name} {year}", str(text_of(nodes, "month_title")))
+        check("the month row shows this month's totals",
+              text_of(nodes, "total_month") == f"{name}\n{row_value(store.totals(f'{month}-01', f'{month}-{last:02d}'))}",
+              repr(text_of(nodes, "total_month")))
+        start = datetime.strptime("2026-10-25", "%Y-%m-%d")
+        today = datetime.strptime(run.adb("shell", "date", "+%Y-%m-%d").strip(), "%Y-%m-%d")
+        first = start + timedelta(days=(today - start).days // 14 * 14)
+        period_to = first + timedelta(days=13)
+        period = store.totals(first.strftime("%Y-%m-%d"), period_to.strftime("%Y-%m-%d"))
+        check("the pay period row shows the current pay period's totals",
+              (text_of(nodes, "total_period") or "").startswith("Pay period ")
+              and (text_of(nodes, "total_period") or "").endswith("\n" + row_value(period)), repr(text_of(nodes, "total_period")))
+        check("the All time row shows the record's totals", text_of(nodes, "total_all") == f"All time\n{row_value(everything)}",
+              repr(text_of(nodes, "total_all")))
+        check("the grid holds every day of the month", len(by_id(nodes, "grid")) == 1 and len(by_id(nodes, "day_cell")) == last,
+              f"{len(by_id(nodes, 'day_cell'))} cells")
+        density = run.density()
+        small, outside = screen_problems(nodes, density)
+        check("every button on the month screen is at least 40dp tall and nothing reaches past the screen",
+              not small and not outside, f"small {small[:3]} outside {outside[:3]}")
+        # Back to the seeded month: its day shows the call time and texts calltally.py counts for it.
+        seeded = day[:7]
+        for _ in range(24):
+            if text_of(nodes, "month_title") == datetime.strptime(seeded, "%Y-%m").strftime("%B %Y"):
+                break
+            run.tap(by_id(nodes, "month_prev")[0])
+            time.sleep(1)
+            nodes = run.nodes()
+        following = (datetime.strptime(seeded, "%Y-%m").replace(day=28) + timedelta(days=4)).replace(day=1)
+        seeded_totals = store.totals(f"{seeded}-01", (following - timedelta(days=1)).strftime("%Y-%m-%d"))
+        nodes = run.wait_for(lambda ns: (text_of(ns, "total_month") or "").endswith(row_value(seeded_totals)), 20)
+        busy = store.range(day, day)["days"][day]
+        words = f"{datetime.strptime(day, '%Y-%m-%d').strftime('%B')} {int(day[8:])}, call time {full_time(busy['call_s'])}, {plural(busy['texts'], 'text')}"
+        cells = [n.get("content-desc") for n in by_id(nodes, "day_cell")]
+        check("the seeded month's total and its busy day match calltally.py", words in cells
+              and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
     except Exception as error:  # noqa: BLE001 - every failure is reported as a fail line, then everything stops
         check("the check ran to the end", False, f"{type(error).__name__}: {error}")
     finally:

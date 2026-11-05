@@ -19,7 +19,7 @@ fi
 sed -e "s/__DEBUGGABLE__/$DEBUG/" -e "s/<!--TEST_HOOK-->/$HOOK/" "$HERE/AndroidManifest.template.xml" > "$WORK/AndroidManifest.xml"
 printf 'package com.calltally.app;\nfinal class Config {\n    static final boolean TEST_HOOK = %s;\n}\n' "$DEBUG" > "$WORK/gen/com/calltally/app/Config.java"
 "$BT/aapt2" compile --dir "$HERE/res" -o "$WORK/res.zip"
-"$BT/aapt2" link -o "$WORK/base.apk" -I "$JAR" --manifest "$WORK/AndroidManifest.xml" --min-sdk-version 26 --target-sdk-version 35 "$WORK/res.zip"
+"$BT/aapt2" link -o "$WORK/base.apk" -I "$JAR" --manifest "$WORK/AndroidManifest.xml" --min-sdk-version 26 --target-sdk-version 35 --java "$WORK/gen" "$WORK/res.zip"
 javac -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$JAR" -d "$WORK/classes" $(find "$HERE/src" "$WORK/gen" -name '*.java')
 "$BT/d8" --lib "$JAR" --min-api 26 --output "$WORK" $(find "$WORK/classes" -name '*.class')
 python3 -I -c "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1],'a');z.write(sys.argv[2],'classes.dex');z.close()" "$WORK/base.apk" "$WORK/classes.dex"

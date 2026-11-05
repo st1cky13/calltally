@@ -1,6 +1,5 @@
 package com.calltally.app;
 
-import android.app.Activity;
 import android.content.Context;
 import android.os.Bundle;
 import android.text.Editable;
@@ -29,7 +28,7 @@ import java.util.Map;
  * Only ticked people count. Ticking adds the person and their numbers to the record's people table; unticking only
  * clears the tick, so their entries stay.
  */
-public class WhoActivity extends Activity {
+public class WhoActivity extends Screen {
     /** One line of the list. contact is the phone's version, or null when the person is no longer on the phone. */
     private static final class Line {
         final String key;
@@ -59,21 +58,21 @@ public class WhoActivity extends Activity {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        Sync.noteCrashes(this);
-        gap = (int) (16 * getResources().getDisplayMetrics().density);
+        gap = dp(16);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setFitsSystemWindows(true);
-        page.setPadding(gap, gap, gap, 0);
-        TextView title = new TextView(this);
-        title.setText("Who counts");
-        title.setTextSize(22);
+        page.setPadding(gap, gap / 2, gap, 0);
         note = new TextView(this);
         note.setTextSize(14);
+        note.setTextColor(muted);
         note.setText("Reading your contacts…");
         note.setPadding(0, gap / 4, 0, gap / 2);
         search = new EditText(this);
         search.setHint("Search by name or number");
+        search.setTextColor(txt);
+        search.setHintTextColor(muted);
+        search.setBackgroundTintList(android.content.res.ColorStateList.valueOf(accent));
+        search.setMinHeight(dp(48));
         search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         search.addTextChangedListener(new TextWatcher() {
@@ -88,9 +87,8 @@ public class WhoActivity extends Activity {
                 filter();
             }
         });
-        tickAll = new Button(this);
-        tickAll.setText("Tick all shown");
-        tickAll.setEnabled(false);
+        tickAll = button("Tick all shown");
+        enable(tickAll, false);
         tickAll.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -100,12 +98,13 @@ public class WhoActivity extends Activity {
         ListView list = new ListView(this);
         adapter = new Adapter();
         list.setAdapter(adapter);
-        page.addView(title);
         page.addView(note);
         page.addView(search);
         page.addView(tickAll);
+        list.setDivider(new android.graphics.drawable.ColorDrawable(line));
+        list.setDividerHeight(Math.max(1, dp(1)));
         page.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        setContentView(page);
+        frame("Who counts", page, true);
         load();
     }
 
@@ -181,7 +180,7 @@ public class WhoActivity extends Activity {
         }
         boolean any = false;
         for (Line line : shown) if (!line.ticked) any = true;
-        tickAll.setEnabled(any);
+        enable(tickAll, any);
         adapter.notifyDataSetChanged();
     }
 
@@ -261,9 +260,13 @@ public class WhoActivity extends Activity {
                 row.setPadding(0, gap / 4, 0, gap / 4);
                 CheckBox box = new CheckBox(WhoActivity.this);
                 box.setTextSize(16);
+                box.setTextColor(txt);
+                box.setMinHeight(dp(44));
+                box.setButtonTintList(new android.content.res.ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {accent, muted}));
                 TextView detail = new TextView(WhoActivity.this);
                 detail.setTextSize(13);
-                detail.setPadding((int) (32 * getResources().getDisplayMetrics().density), 0, 0, 0);
+                detail.setTextColor(muted);
+                detail.setPadding(dp(32), 0, 0, 0);
                 row.addView(box);
                 row.addView(detail);
             }

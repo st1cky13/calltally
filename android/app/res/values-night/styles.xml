@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Base" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:textColorPrimary">@color/txt</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+    </style>
+    <style name="Teal" parent="Base">
+        <item name="ctAccent">@color/teal_accent</item>
+        <item name="ctInk">@color/teal_ink</item>
+        <item name="ctTint">@color/teal_tint</item>
+        <item name="android:colorAccent">@color/teal_accent</item>
+        <item name="android:colorPrimary">@color/teal_accent</item>
+        <item name="android:colorPrimaryDark">@color/teal_accent</item>
+    </style>
+    <style name="Blue" parent="Base">
+        <item name="ctAccent">@color/blue_accent</item>
+        <item name="ctInk">@color/blue_ink</item>
+        <item name="ctTint">@color/blue_tint</item>
+        <item name="android:colorAccent">@color/blue_accent</item>
+        <item name="android:colorPrimary">@color/blue_accent</item>
+        <item name="android:colorPrimaryDark">@color/blue_accent</item>
+    </style>
+    <style name="Plum" parent="Base">
+        <item name="ctAccent">@color/plum_accent</item>
+        <item name="ctInk">@color/plum_ink</item>
+        <item name="ctTint">@color/plum_tint</item>
+        <item name="android:colorAccent">@color/plum_accent</item>
+        <item name="android:colorPrimary">@color/plum_accent</item>
+        <item name="android:colorPrimaryDark">@color/plum_accent</item>
+    </style>
+    <style name="Amber" parent="Base">
+        <item name="ctAccent">@color/amber_accent</item>
+        <item name="ctInk">@color/amber_ink</item>
+        <item name="ctTint">@color/amber_tint</item>
+        <item name="android:colorAccent">@color/amber_accent</item>
+        <item name="android:colorPrimary">@color/amber_accent</item>
+        <item name="android:colorPrimaryDark">@color/amber_accent</item>
+    </style>
+    <style name="Slate" parent="Base">
+        <item name="ctAccent">@color/slate_accent</item>
+        <item name="ctInk">@color/slate_ink</item>
+        <item name="ctTint">@color/slate_tint</item>
+        <item name="android:colorAccent">@color/slate_accent</item>
+        <item name="android:colorPrimary">@color/slate_accent</item>
+        <item name="android:colorPrimaryDark">@color/slate_accent</item>
+    </style>
+</resources>

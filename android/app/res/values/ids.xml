@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Names for the screens' parts, so the emulator check can find them. -->
+<resources>
+    <item type="id" name="month_title" />
+    <item type="id" name="month_prev" />
+    <item type="id" name="month_next" />
+    <item type="id" name="total_month" />
+    <item type="id" name="total_period" />
+    <item type="id" name="period_prev" />
+    <item type="id" name="period_next" />
+    <item type="id" name="total_all" />
+    <item type="id" name="grid" />
+    <item type="id" name="day_cell" />
+    <item type="id" name="updated" />
+    <item type="id" name="gear" />
+    <item type="id" name="problem" />
+    <item type="id" name="screen_title" />
+    <item type="id" name="day_line" />
+    <item type="id" name="tab_calls" />
+    <item type="id" name="tab_texts" />
+    <item type="id" name="rows" />
+    <item type="id" name="close" />
+    <item type="id" name="hidden_note" />
+    <item type="id" name="nothing" />
+    <item type="id" name="entry_action" />
+    <item type="id" name="cal_title" />
+    <item type="id" name="cal_prev" />
+    <item type="id" name="cal_next" />
+    <item type="id" name="cal_grid" />
+    <item type="id" name="cal_day" />
+    <item type="id" name="review" />
+    <item type="id" name="revert" />
+    <item type="id" name="confirm" />
+    <item type="id" name="pay_line" />
+    <item type="id" name="pay_change" />
+    <item type="id" name="who_line" />
+    <item type="id" name="who_open" />
+    <item type="id" name="hide_ignored" />
+    <item type="id" name="mode_system" />
+    <item type="id" name="mode_light" />
+    <item type="id" name="mode_dark" />
+    <item type="id" name="theme_teal" />
+    <item type="id" name="theme_blue" />
+    <item type="id" name="theme_plum" />
+    <item type="id" name="theme_amber" />
+    <item type="id" name="theme_slate" />
+    <item type="id" name="look_default" />
+    <item type="id" name="run_line" />
+    <item type="id" name="run_now" />
+    <item type="id" name="contact_row" />
+</resources>

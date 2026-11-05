@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The page's greys and the five themes' accents, light. -->
+<resources>
+    <color name="bg">#f4f7f6</color>
+    <color name="card">#ffffff</color>
+    <color name="card2">#eef3f2</color>
+    <color name="line">#dde6e4</color>
+    <color name="line2">#c4d3d0</color>
+    <color name="txt">#14201e</color>
+    <color name="muted">#46585a</color>
+    <color name="loss">#c23a3a</color>
+    <color name="loss_tint">#1Ac23a3a</color>
+    <color name="teal_accent">#0f6b5c</color>
+    <color name="teal_ink">#ffffff</color>
+    <color name="teal_tint">#170f6b5c</color>
+    <color name="blue_accent">#1f5fae</color>
+    <color name="blue_ink">#ffffff</color>
+    <color name="blue_tint">#171f5fae</color>
+    <color name="plum_accent">#7a3b84</color>
+    <color name="plum_ink">#ffffff</color>
+    <color name="plum_tint">#177a3b84</color>
+    <color name="amber_accent">#8a5300</color>
+    <color name="amber_ink">#ffffff</color>
+    <color name="amber_tint">#178a5300</color>
+    <color name="slate_accent">#3d5366</color>
+    <color name="slate_ink">#ffffff</color>
+    <color name="slate_tint">#173d5366</color>
+</resources>

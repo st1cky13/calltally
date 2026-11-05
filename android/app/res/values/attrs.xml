@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The chosen theme's accent, the ink on it, and the light wash of it, set by each theme style. -->
+    <attr name="ctAccent" format="color" />
+    <attr name="ctInk" format="color" />
+    <attr name="ctTint" format="color" />
+</resources>

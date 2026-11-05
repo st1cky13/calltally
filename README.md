@@ -1,6 +1,9 @@
 # calltally
 
 The Android app is becoming a standalone app that keeps its own record on the phone; the server and page below are being retired.
+The app's own screens work like the page: the month with each day's call time and texts, the month, pay period and all
+time totals, each day's calls and texts with Ignore and Restore, the totals by contact, and Options with Who counts, the
+pay period start on a calendar, hiding ignored entries, and System, Light or Dark with five colour themes.
 
 A private calendar of work calls and texts. It opens on the current month, with arrows to move between months. At the
 top are three totals of call time, calls and texts: the month on screen, the pay period, and all time. The pay period has
@@ -29,7 +32,7 @@ Build with `CALLTALLY_SERVER=https://YOUR-SERVER sh android/app/build.sh` (see t
 result in the server's data folder as `calltally.apk`, and download it on the phone from `/phone/calltally.apk`.
 
 1. Install Tailscale and the app, open it and allow what it asks for. If Android blocks a permission, open App info for
-   Call Tally Sync, choose the three-dot menu, and pick "Allow restricted settings".
+   Call Tally, choose the three-dot menu, and pick "Allow restricted settings".
 2. Set its battery use to unrestricted, and turn off "remove permissions if app is unused".
 
 The page's "Updated" label turns yellow if the phone hasn't uploaded for three hours, and red after a full day. If the

@@ -438,7 +438,8 @@ class AndroidRulesTests(ServerCase):
             source = ROOT / "android" / "app"
             app = source / "src" / "com" / "calltally" / "app"
             subprocess.run([str(self.TOOLS / "javac"), "-nowarn", "-d", str(out), str(app / "Rules.java"), str(app / "Ledger.java"),
-                            str(app / "Sql.java"), str(source / "check/RulesCheck.java")], check=True, capture_output=True)
+                            str(app / "Sql.java"), str(app / "PayPeriod.java"), str(app / "Words.java"),
+                            str(source / "check/RulesCheck.java")], check=True, capture_output=True)
             done = subprocess.run([str(self.TOOLS / "java"), "-cp", str(out), "com.calltally.app.RulesCheck"],
                                   check=True, capture_output=True, text=True, env={**os.environ, "TZ": "America/Los_Angeles"})
             AndroidRulesTests._rules = dict(line.split(" ", 1) for line in done.stdout.splitlines())
@@ -473,6 +474,30 @@ class AndroidRulesTests(ServerCase):
         # A group of three or more is known by its conversation, so it can't match what the script sent for it.
         self.assertEqual(json.loads(rules["fixture-group-ids"]), [APP_GROUP_ID])
         self.assertEqual([calltally.entry_id(e["kind"], e["number"], e["epoch"], e["direction"]) for e in group], [APP_GROUP_ID])
+
+    def test_pay_periods_cover_every_day_once(self):
+        rules = self.run_rules()
+        checked, wrong = rules["pay-check"].split()
+        self.assertEqual((int(checked) > 13000, wrong), (True, "0"))
+        self.assertEqual(rules["pay-now"], "0 2026-10-25 2026-11-07 | Pay period Oct 25 – Nov 7")
+        self.assertEqual(rules["pay-next"], "Pay period Nov 8 – Nov 21 | Pay period Jan 3 – Jan 16, 2027 | Pay period Aug 31 – Sep 13, 2025")
+        self.assertEqual(rules["pay-before"], "-1 2026-10-11 2026-10-24")
+        self.assertEqual(rules["pay-describe"], "Pay periods start Sun Oct 25 and run two weeks | Pay periods start Sun Jan 3, 2027 and run one week")
+        self.assertEqual(rules["pay-bad"], "null null null null")
+
+    def test_screen_words(self):
+        rules = self.run_rules()
+        self.assertEqual(rules["words-clock"], "17:06 1:08:17 0:59 0:00 10:00:00")
+        self.assertEqual(rules["words-full"], "19m 43s | 1h 09m 39s | 47s | 1h 00m 00s")
+        self.assertEqual(rules["words-summary"], "19m 14s on 16 calls · 32 texts | 0s on 1 call · 1 text")
+        self.assertEqual(rules["words-at"], "12:05 AM 12:30 PM 3:08 PM")
+        self.assertEqual(rules["words-day"], "Tuesday, November 3, 2026 | Sun Oct 25 | Sun Jan 3, 2027")
+        self.assertEqual(rules["words-status"].split(" | "), [
+            "3:08 PM · outgoing call", "3:08 PM · outgoing call, no answer", "3:08 PM · missed call", "3:08 PM · declined call",
+            "4:16 PM · text received", "4:16 PM · text sent", "11:50 PM · incoming call · ended 12:10 AM",
+            "11:00 PM · incoming call · ended Jan 2, 2027, 12:00 AM"])
+        self.assertEqual(rules["words-updated"],
+                         "Not updated yet | Updated just now | Updated 4 min ago | Updated 3 hr ago | Updated 3 days ago | 0121")
 
     def test_record_adds_and_repeats_like_the_server(self):
         rules = self.run_rules()

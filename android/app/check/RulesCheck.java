@@ -32,6 +32,59 @@ public class RulesCheck {
         people();
         ledger();
         statements();
+        payPeriods();
+        words();
+    }
+
+    /**
+     * Every day from 2024 to 2029 falls in exactly one pay period, for a few starts and lengths: the period index() gives
+     * holds the day, the next period starts the day after this one ends, and no other period holds it.
+     */
+    private static void payPeriods() {
+        String[][] cases = {{"2026-10-25", "14"}, {"2026-11-08", "14"}, {"2028-02-29", "14"}, {"2026-12-31", "7"}, {"2025-01-01", "1"}, {"2026-10-25", "30"}};
+        int checked = 0, wrong = 0;
+        for (String[] c : cases) {
+            PayPeriod p = PayPeriod.of(c[0], c[1]);
+            for (java.time.LocalDate d = java.time.LocalDate.of(2024, 1, 1); d.isBefore(java.time.LocalDate.of(2030, 1, 1)); d = d.plusDays(1)) {
+                long k = p.index(d);
+                boolean inside = !d.isBefore(p.first(k)) && !d.isAfter(p.last(k));
+                boolean neighbours = d.isAfter(p.last(k - 1)) && d.isBefore(p.first(k + 1));
+                boolean joined = p.last(k).plusDays(1).equals(p.first(k + 1)) && p.last(k).equals(p.first(k).plusDays(p.days - 1));
+                checked++;
+                if (!(inside && neighbours && joined)) wrong++;
+            }
+        }
+        System.out.println("pay-check " + checked + " " + wrong);
+        PayPeriod p = PayPeriod.of("2026-10-25", "14");
+        java.time.LocalDate today = java.time.LocalDate.of(2026, 11, 4);
+        long k = p.index(today);
+        System.out.println("pay-now " + k + " " + p.first(k) + " " + p.last(k) + " | " + p.label(k, today));
+        System.out.println("pay-next " + p.label(k + 1, today) + " | " + p.label(k + 5, today) + " | " + p.label(-30, today));
+        System.out.println("pay-before " + p.index(java.time.LocalDate.of(2026, 10, 24)) + " " + p.first(-1) + " " + p.last(-1));
+        System.out.println("pay-describe " + p.describe(today) + " | " + PayPeriod.of("2027-01-03", "7").describe(today));
+        System.out.println("pay-bad " + PayPeriod.of(null, "14") + " " + PayPeriod.of("2026-13-01", "14") + " " + PayPeriod.of("2026-10-25", "0")
+            + " " + PayPeriod.of("2026-10-25", "x"));
+    }
+
+    private static void words() {
+        System.out.println("words-clock " + Words.clockTime(1026) + " " + Words.clockTime(4097) + " " + Words.clockTime(59) + " " + Words.clockTime(0)
+            + " " + Words.clockTime(36000));
+        System.out.println("words-full " + Words.fullTime(1183) + " | " + Words.fullTime(4179) + " | " + Words.fullTime(47) + " | " + Words.fullTime(3600));
+        System.out.println("words-summary " + Words.summary(1154, 16, 32) + " | " + Words.summary(0, 1, 1));
+        System.out.println("words-at " + Words.clock("2026-11-03 00:05:09") + " " + Words.clock("2026-11-03 12:30:00") + " " + Words.clock("2026-11-03 15:08:00"));
+        System.out.println("words-day " + Words.longDay(java.time.LocalDate.of(2026, 11, 3)) + " | "
+            + Words.weekdayDay(java.time.LocalDate.of(2026, 10, 25), java.time.LocalDate.of(2026, 11, 4)) + " | "
+            + Words.weekdayDay(java.time.LocalDate.of(2027, 1, 3), java.time.LocalDate.of(2026, 11, 4)));
+        System.out.println("words-status " + Words.status("call", "out", "2026-11-03 15:08:00", 47) + " | "
+            + Words.status("call", "out", "2026-11-03 15:08:00", 0) + " | " + Words.status("call", "missed", "2026-11-03 15:08:00", 7) + " | "
+            + Words.status("call", "rejected", "2026-11-03 15:08:00", 3) + " | " + Words.status("text", "in", "2026-11-03 16:16:00", 0) + " | "
+            + Words.status("text", "out", "2026-11-03 16:16:00", 0) + " | " + Words.status("call", "in", "2026-11-03 23:50:00", 1200) + " | "
+            + Words.status("call", "in", "2026-12-31 23:00:00", 90000));
+        long now = 1793000000000L;
+        System.out.println("words-updated " + Words.updated(0, now) + " | " + Words.updated(now - 20000, now) + " | " + Words.updated(now - 4 * 60000, now)
+            + " | " + Words.updated(now - 181 * 60000L, now) + " | " + Words.updated(now - 3 * 86400000L, now)
+            + " | " + Words.staleness(now - 180 * 60000L, now) + Words.staleness(now - 181 * 60000L, now) + Words.staleness(now - 1440 * 60000L, now)
+            + Words.staleness(0, now));
     }
 
     /**
