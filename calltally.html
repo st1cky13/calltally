@@ -25,8 +25,11 @@
   #problem{background:var(--loss-t);color:var(--loss);border:1px solid var(--loss);border-radius:10px;padding:8px 12px}
   #empty{color:var(--muted);text-align:center;padding:4px}
   .month{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;min-width:0}
-  .month h2{padding:2px 4px 0}
-  .month h2{margin:0 0 10px;font-size:16px}
+  .nav{display:flex;align-items:center;gap:8px}
+  .nav h2{margin:0;flex:1;text-align:center;font-size:17px}
+  .nav .btn{width:44px;height:44px;padding:0;font-size:18px;font-weight:700}
+  #monthTotal{margin:8px 0 12px;text-align:center;color:var(--muted)}
+  #monthTotal b{color:var(--txt);font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
   .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
   .week{margin-bottom:4px;color:var(--muted);font-size:12px;text-align:center}
   .day{appearance:none;font:inherit;color:inherit;text-align:left;background:var(--card2);border:1px solid transparent;border-radius:8px;
@@ -42,7 +45,6 @@
   .day.future{opacity:.45}
   .gap{min-height:68px}
   @media (min-width:640px){.day,.gap{min-height:84px}.day{padding:7px}.day.today{padding:6px}.day .n{font-size:13px}.day .t{font-size:14px}.day .x{font-size:13px}}
-  #more{height:1px}
   dialog{border:1px solid var(--line2);border-radius:14px;background:var(--card);color:var(--txt);box-shadow:var(--shadow);padding:0;
     width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 32px)}
   dialog::backdrop{background:var(--scrim)}
@@ -67,7 +69,16 @@
 <main id="main">
   <div id="problem" hidden></div>
   <div id="empty" hidden>No work calls or texts yet.</div>
-  <div id="more"></div>
+  <section class="month">
+    <div class="nav">
+      <button class="btn" id="prev" type="button" aria-label="Previous month">&lt;</button>
+      <h2 id="title" aria-live="polite"></h2>
+      <button class="btn" id="next" type="button" aria-label="Next month">&gt;</button>
+    </div>
+    <p id="monthTotal"></p>
+    <div class="week" id="week"></div>
+    <div class="grid" id="grid"></div>
+  </section>
 </main>
 <dialog id="sheet" aria-labelledby="sheetTitle">
   <div class="head">
@@ -80,7 +91,7 @@
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const main = $("main"), more = $("more"), sheet = $("sheet");
+const sheet = $("sheet");
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const WEEK = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -88,13 +99,11 @@ const pad = n => String(n).padStart(2, "0");
 const dayKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
 const opened = new Date();
-const firstMonth = {y: opened.getFullYear(), m: opened.getMonth()};
-let next = {...firstMonth};      // the next older month to draw
-let oldestDrawn = null;          // day key of the first day drawn
+let thisMonth = {y: opened.getFullYear(), m: opened.getMonth()};
+let view = {...thisMonth};       // the month on screen
 let earliest = null;             // first day with any data
 let openDay = null;
-let loading = false;
-let refreshAsked = 0, refreshShown = 0;
+let refreshAsked = 0;
 const cells = new Map();
 
 function todayKey(){const d = new Date(); return dayKey(d.getFullYear(), d.getMonth(), d.getDate());}
@@ -126,32 +135,41 @@ async function api(path, body){
   return reply.json();
 }
 
-function drawMonth(y, m){
-  const section = document.createElement("section");
-  section.className = "month";
-  const title = document.createElement("h2");
-  title.textContent = `${MONTHS[m]} ${y}`;
-  const week = document.createElement("div");
-  week.className = "week";
-  for (const name of WEEK){const s = document.createElement("span"); s.textContent = name; week.append(s);}
-  const grid = document.createElement("div");
-  grid.className = "grid";
-  for (let i = new Date(y, m, 1).getDay(); i > 0; i--){const g = document.createElement("div"); g.className = "gap"; grid.append(g);}
+function sameMonth(a, b){return a.y === b.y && a.m === b.m;}
+function shifted({y, m}, by){const d = new Date(y, m + by, 1); return {y: d.getFullYear(), m: d.getMonth()};}
+
+function showTotal(text){
+  const value = document.createElement("b");
+  value.textContent = text;
+  $("monthTotal").replaceChildren("Total call time: ", value);
+}
+
+function drawMonth(){
+  const {y, m} = view;
+  $("title").textContent = `${MONTHS[m]} ${y}`;
+  showTotal("…");
+  cells.clear();
+  const parts = [];
+  for (let i = new Date(y, m, 1).getDay(); i > 0; i--){const g = document.createElement("div"); g.className = "gap"; parts.push(g);}
   const count = new Date(y, m + 1, 0).getDate();
   for (let d = 1; d <= count; d++){
     const key = dayKey(y, m, d);
     const cell = document.createElement("button");
     cell.type = "button";
-    cell.className = "day";
-    cell.disabled = true;
     cell.dataset.day = key;
     cell.addEventListener("click", () => openSheet(key));
     cells.set(key, cell);
     fillCell(cell, null);
-    grid.append(cell);
+    parts.push(cell);
   }
-  section.append(title, week, grid);
-  main.insertBefore(section, more);
+  $("grid").replaceChildren(...parts);
+  drawNav();
+}
+
+function drawNav(){
+  const before = shifted(view, -1);
+  $("prev").disabled = !earliest || lastDayKey(before.y, before.m) < earliest;
+  $("next").disabled = sameMonth(view, thisMonth);
 }
 
 function fillCell(cell, data){
@@ -199,42 +217,31 @@ function showUpdated(last){
 }
 
 async function refresh(){
-  if (!oldestDrawn) return;
-  const from = oldestDrawn, mine = ++refreshAsked;
-  const data = await api(`/api/range?from=${from}&to=${lastDayKey(firstMonth.y, firstMonth.m)}`);
-  if (mine < refreshShown) return;   // a newer reply already arrived
-  refreshShown = mine;
+  const mine = ++refreshAsked, {y, m} = view;
+  const data = await api(`/api/range?from=${dayKey(y, m, 1)}&to=${lastDayKey(y, m)}`);
+  if (mine !== refreshAsked) return;   // a newer request is on its way
   earliest = data.earliest;
-  for (const [key, cell] of cells) if (key >= from) fillCell(cell, data.days[key] || null);
+  for (const [key, cell] of cells) fillCell(cell, data.days[key] || null);
+  showTotal(fullTime(Object.values(data.days).reduce((sum, day) => sum + day.call_s, 0)));
   $("empty").hidden = !!earliest;
+  drawNav();
   showUpdated(data.last_upload);
 }
 
-function needsMore(){
-  if (cells.size === 0) return true;
-  return !!earliest && lastDayKey(next.y, next.m) >= earliest;
-}
-
-async function loadOlder(){
-  if (loading || !needsMore()) return;
-  loading = true;
+async function load(){
   try {
-    const {y, m} = next;
-    drawMonth(y, m);
-    oldestDrawn = dayKey(y, m, 1);
-    next = m === 0 ? {y: y - 1, m: 11} : {y, m: m - 1};
     await refresh();
     showProblem("");
   } catch (error){
-    showProblem(`Could not load the calendar. ${error.message}`);
-  } finally {
-    loading = false;
+    showProblem(`Could not reach the server. ${error.message}`);
   }
-  // A short calendar may leave the marker on screen, with no scroll to come.
-  if (markerNear()) loadOlder();
 }
 
-function markerNear(){return more.getBoundingClientRect().top < innerHeight + 600;}
+function go(by){
+  view = shifted(view, by);
+  drawMonth();
+  load();
+}
 
 function statusWords(entry){
   const named = {in: "incoming", out: "outgoing", missed: "missed", rejected: "declined"}[entry.direction];
@@ -309,23 +316,27 @@ $("close").addEventListener("click", () => sheet.close());
 sheet.addEventListener("click", event => {if (event.target === sheet) sheet.close();});
 sheet.addEventListener("close", () => {openDay = null;});
 
-async function tick(){
-  const now = new Date();
-  if (now.getFullYear() !== firstMonth.y || now.getMonth() !== firstMonth.m){location.reload(); return;}
-  try {
-    await refresh();
-    showProblem("");
-    // The first history may have arrived after the page opened, or the first load may have failed.
-    if (markerNear()) loadOlder();
+$("prev").addEventListener("click", () => go(-1));
+$("next").addEventListener("click", () => go(1));
+
+function tick(){
+  const now = new Date(), current = {y: now.getFullYear(), m: now.getMonth()};
+  if (!sameMonth(current, thisMonth)){
+    const following = sameMonth(view, thisMonth);
+    thisMonth = current;
+    if (following){
+      view = current;
+      drawMonth();
+    }
   }
-  catch (error){showProblem(`Could not reach the server. ${error.message}`);}
+  load();
 }
 setInterval(tick, 60000);
 document.addEventListener("visibilitychange", () => {if (!document.hidden) tick();});
 
-addEventListener("scroll", () => {if (markerNear()) loadOlder();}, {passive: true});
-addEventListener("resize", () => {if (markerNear()) loadOlder();});
-loadOlder();
+for (const name of WEEK){const s = document.createElement("span"); s.textContent = name; $("week").append(s);}
+drawMonth();
+load();
 </script>
 </body>
 </html>

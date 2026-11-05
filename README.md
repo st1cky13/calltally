@@ -1,7 +1,7 @@
 # calltally
 
-A private calendar of work calls and texts. It opens on the current month and scrolls down to older ones. Each day shows
-total call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted
+A private calendar of work calls and texts. It opens on the current month, with arrows to move between months and that
+month's total call time at the top. Each day shows total call time and the number of texts. Click a day to see its entries, and delete any that shouldn't count. Deleted
 entries stay deleted and can be restored.
 
 A script on an Android phone (in Termux) finds calls and texts with contacts whose name ends in `-Work` and uploads them
