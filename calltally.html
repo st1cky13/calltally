@@ -53,7 +53,8 @@
   .head p{margin:2px 0 0;color:var(--muted);font-size:14px}
   .btn{font:inherit;font-size:14px;color:var(--txt);background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;min-height:36px;cursor:pointer;white-space:nowrap}
   .btn:disabled{opacity:.55;cursor:default}
-  #close{margin-left:auto}
+  .foot{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + var(--sab))}
+  #close{display:block;width:100%;min-height:44px}
   #rows{list-style:none;margin:0;padding:0}
   #rows li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
   #rows li:last-child{border-bottom:0}
@@ -83,10 +84,10 @@
 <dialog id="sheet" aria-labelledby="sheetTitle">
   <div class="head">
     <div><h2 id="sheetTitle"></h2><p id="sheetTotals"></p></div>
-    <button class="btn" id="close" type="button">Close</button>
   </div>
   <p id="none" hidden>Nothing on this day.</p>
   <ul id="rows"></ul>
+  <div class="foot"><button class="btn" id="close" type="button">Close</button></div>
 </dialog>
 <script>
 "use strict";
