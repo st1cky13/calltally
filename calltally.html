@@ -104,6 +104,7 @@ let view = {...thisMonth};       // the month on screen
 let earliest = null;             // first day with any data
 let openDay = null;
 let refreshAsked = 0;
+let monthLoaded = false;
 const cells = new Map();
 
 function todayKey(){const d = new Date(); return dayKey(d.getFullYear(), d.getMonth(), d.getDate());}
@@ -148,6 +149,7 @@ function drawMonth(){
   const {y, m} = view;
   $("title").textContent = `${MONTHS[m]} ${y}`;
   showTotal("…");
+  monthLoaded = false;
   cells.clear();
   const parts = [];
   for (let i = new Date(y, m, 1).getDay(); i > 0; i--){const g = document.createElement("div"); g.className = "gap"; parts.push(g);}
@@ -218,22 +220,30 @@ function showUpdated(last){
 
 async function refresh(){
   const mine = ++refreshAsked, {y, m} = view;
-  const data = await api(`/api/range?from=${dayKey(y, m, 1)}&to=${lastDayKey(y, m)}`);
-  if (mine !== refreshAsked) return;   // a newer request is on its way
+  let data;
+  try {
+    data = await api(`/api/range?from=${dayKey(y, m, 1)}&to=${lastDayKey(y, m)}`);
+  } catch (error){
+    if (mine !== refreshAsked) return false;
+    throw error;
+  }
+  if (mine !== refreshAsked) return false;   // a newer request is on its way
+  monthLoaded = true;
   earliest = data.earliest;
   for (const [key, cell] of cells) fillCell(cell, data.days[key] || null);
   showTotal(fullTime(Object.values(data.days).reduce((sum, day) => sum + day.call_s, 0)));
   $("empty").hidden = !!earliest;
   drawNav();
   showUpdated(data.last_upload);
+  return true;
 }
 
 async function load(){
   try {
-    await refresh();
-    showProblem("");
+    if (await refresh()) showProblem("");
   } catch (error){
     showProblem(`Could not reach the server. ${error.message}`);
+    if (!monthLoaded) showTotal("not available");
   }
 }
 
@@ -301,12 +311,13 @@ function drawRow(entry, key){
     action.disabled = true;
     try {
       await api(entry.deleted_at ? "/api/restore" : "/api/delete", {id: entry.id});
-      await drawSheet(key);
-      await refresh();
     } catch (error){
       action.disabled = false;
       $("sheetTotals").textContent = `That did not save. ${error.message}`;
+      return;
     }
+    await drawSheet(key);
+    await load();
   });
   row.append(info, length, action);
   return row;
