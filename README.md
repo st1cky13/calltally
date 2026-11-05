@@ -30,6 +30,17 @@ stays hidden until you set one in Options. The page can be shown again from Opti
 - The app reads when a call or text happened, who it was with, its direction and a call's length. It never reads what a
   text says.
 
+## Encrypted chats
+
+Some one-to-one chats with end-to-end encryption on are kept so that only the phone's own messaging app can read them,
+so they don't show up in Call Tally. The "Catch up encrypted" button in Options reads them: it asks Android to make Call
+Tally the phone's messaging app for a moment, which you approve in an Android dialog, reads once, then asks you to switch
+back to Google Messages, which you approve in another dialog. Call Tally never sends a message, and while it holds that
+role it says so plainly, in Options and on the month screen, with a button to switch back. If a text arrives during that
+brief moment it is delivered only to the messaging app, so Call Tally writes it straight into the phone's inbox, unread,
+so Google Messages shows it after the switch back. That pass-through is the only time the app touches a message's words,
+and it never reads them to count.
+
 ## Limits
 
 - The app can only count what Android lets it see. It reads Android's shared call log and SMS and MMS tables. Whether

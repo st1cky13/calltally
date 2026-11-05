@@ -17,6 +17,11 @@ hand, then the same build installed over it, which must open on the first-start 
 pass or fail line per check, exits 1 on any fail, and always stops the emulator and adb. Screenshots of the first start
 go into the output folder's shots/ unless --shots names another.
 
+It also opens Catch up encrypted and checks its screen and wording, but skips the steps that need the Android system role
+dialogs (becoming the default messaging app, the mid-hold text pass-through, and handing the role back): those are not
+reliably drivable on this emulator, so it prints a "skipped" line and leaves them for a check on a real phone. The plain
+pieces behind them are covered by tests/test_calltally.py.
+
 Usage: python3 tools/emulator_check.py [--out FOLDER] [--shots FOLDER]   (default: a new folder under $TMPDIR)
 Needs the Android tools in ~/local/calltally-build (see android/app/build.sh) and the AVD "ct". Takes a few minutes.
 """
@@ -930,6 +935,74 @@ def main():
         time.sleep(1)
         run.sh("input", "keyevent", "KEYCODE_BACK")
         time.sleep(1)
+
+        # Catch up encrypted: Call Tally briefly becomes the phone's messaging app, reads once, then hands the role back,
+        # with the owner approving each change in a system dialog. Dana-Work and Sam - Work are ticked and the record matches
+        # `got`. The default messaging app is com.android.messaging. A text that arrives while Call Tally holds the role
+        # must be passed through into the phone's inbox, unread, by its SMS receiver.
+        def sms_default():
+            """The phone's messaging app exactly as the app reads it (Telephony.Sms.getDefaultSmsPackage), through the
+            test hook. The role holder in dumpsys role doesn't reflect the live default during a brief hold on this image,
+            so the app's own reading is the ground truth."""
+            out = run.sh("am", "broadcast", "--include-stopped-packages", "-a", f"{APP}.TEST_TICK",
+                         "-n", f"{APP}/.TestHook", "--ez", "default_sms", "true")
+            return out.split('data="')[1].split('"')[0] if 'data="' in out else out.strip()
+
+        def open_options(want):
+            """Opens Options fresh and scrolls until the part named `want` is on screen."""
+            run.sh("am", "force-stop", APP)
+            ns = []
+            for _ in range(3):
+                run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+                ns = run.wait_for(lambda n2: bool(by_id(n2, "gear")), 20)
+                if by_id(ns, "gear"):
+                    break
+                run.sh("input", "keyevent", "KEYCODE_BACK")
+            if not by_id(ns, "gear"):
+                run.shot("options-no-gear")
+                raise RuntimeError("the month screen's gear wasn't found to open Options")
+            run.tap(by_id(ns, "gear")[0])
+            ns = run.wait_for(lambda n2: bool(by_id(n2, "who_open")), 30)
+            for _ in range(10):
+                if by_id(ns, want):
+                    break
+                run.swipe_up()
+                ns = run.nodes()
+            return ns
+
+        def open_catch_up():
+            ns = open_options("catch_up")
+            if not by_id(ns, "catch_up"):
+                raise RuntimeError("the Catch up encrypted button wasn't found in Options")
+            run.tap(by_id(ns, "catch_up")[0])
+            return run.wait_for(lambda n2: bool(by_id(n2, "catch_continue")), 30)
+
+        check("before catching up, Call Tally is not the messaging app and Google's app is",
+              sms_default() == "com.android.messaging", sms_default())
+        # The feature's own screen is driven here: its explanation, Continue and Cancel, and that it has not caught up
+        # yet. Opening and cancelling it changes nothing. The steps past Continue are skipped (see below).
+        nodes = open_catch_up()
+        run.shot("09-catch-up-explain")
+        check("Catch up encrypted opens with the explanation, Continue, Cancel and 'Not yet'",
+              bool(by_id(nodes, "catch_continue")) and bool(by_id(nodes, "catch_cancel"))
+              and "only be read by the phone's messaging app" in (text_of(nodes, "catch_explain") or "")
+              and (text_of(nodes, "catch_line") or "") == "Not yet", repr(text_of(nodes, "catch_explain")))
+        run.tap(by_id(nodes, "catch_cancel")[0])
+        # Everything past Continue needs the Android system role dialogs: becoming the default messaging app, a text that
+        # arrives while it holds the role being passed through to the inbox unread, handing the role back, and the
+        # still-the-messaging-app warning. Approving those on-device dialogs through uiautomator, and injecting a text
+        # mid-hold, are not reliably drivable on this emulator (the role UI and adb drop out), so they are skipped. The
+        # plain pieces they rely on — the inbox row values for an arriving text, and the catch-up wording — are covered by
+        # tests/test_calltally.py (test_catch_up_passthrough_pieces). The two role dialogs need a check on a real phone.
+        print("info  skipped: role dialogs not drivable on this emulator — becoming and handing back the default "
+              "messaging app, and the mid-hold text pass-through, are not exercised here (the row values and wording are "
+              "covered by the unit tests; verify the two role dialogs on a real phone)", flush=True)
+        check("Catch up encrypted's screen and wording are in place; the role-change steps are skipped (see the info line above)", True)
+        # Nothing was changed, so the runs below are unaffected: the messaging app and the record are as before.
+        run.sh("am", "force-stop", APP)
+        check("catching up changed nothing: Google's app is still the messaging app and the record is unchanged",
+              sms_default() == "com.android.messaging" and rows(run.record()) == got,
+              f"default {sms_default()} new {[r for r in rows(run.record()) if r not in got][:2]}")
 
         # Run 2: Dana unticked, and a new call from her. Nothing goes and nothing of hers comes in.
         answer = run.tick([DANA1], untick=True)

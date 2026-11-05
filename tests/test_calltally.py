@@ -75,7 +75,7 @@ class AndroidRulesTests(RecordCase):
             app = source / "src" / "com" / "calltally" / "app"
             subprocess.run([str(self.TOOLS / "javac"), "-nowarn", "-d", str(out), str(app / "Rules.java"), str(app / "Ledger.java"),
                             str(app / "Sql.java"), str(app / "PayPeriod.java"), str(app / "Words.java"), str(app / "PhoneCheck.java"),
-                            str(source / "check/RulesCheck.java")], check=True, capture_output=True)
+                            str(app / "Passthrough.java"), str(source / "check/RulesCheck.java")], check=True, capture_output=True)
             done = subprocess.run([str(self.TOOLS / "java"), "-cp", str(out), "com.calltally.app.RulesCheck"],
                                   check=True, capture_output=True, text=True, env={**os.environ, "TZ": "America/Los_Angeles"})
             AndroidRulesTests._rules = dict(line.split(" ", 1) for line in done.stdout.splitlines())
@@ -171,6 +171,17 @@ class AndroidRulesTests(RecordCase):
         self.assertEqual(rules["phone-other"].split(" | "), [
             "Oct 26, 5:45 AM · other [3] · text row · chat 1002 · address 5557776666 · creator unknown · skipped: not received or sent",
             "from +15551234567, to insert-address-token", "by the conversation list", "by the remembered filing", "null"])
+
+    def test_catch_up_passthrough_pieces(self):
+        rules = self.run_rules()
+        # The row a text arriving during the brief window is written as: unread (read=0, seen=0), passed through, no sub.
+        self.assertEqual(rules["passthrough-row"],
+                         "address=+15550009999 body=hello during catch up date=1793000000000 date_sent=1793000000500"
+                         " read=0 seen=0 thread_id=42")
+        # A known SIM is kept; it is left out when below zero.
+        self.assertEqual(rules["passthrough-sub"], "3 false")
+        self.assertEqual(rules["passthrough-added"], "No new calls or texts. | 1 new call or text added. | 5 new calls and texts added.")
+        self.assertEqual(rules["passthrough-last"], "Not yet | Last caught up: Oct 26, 12:33 AM")
 
     def test_screen_words(self):
         rules = self.run_rules()

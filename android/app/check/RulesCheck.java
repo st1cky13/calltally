@@ -38,6 +38,24 @@ public class RulesCheck {
         moved();
         search();
         phoneCheck();
+        passthrough();
+    }
+
+    /**
+     * Catch up encrypted's plain pieces: the inbox row a text that arrives during the brief window is written as (unread,
+     * passed through), and the words the screens show. Compared with tests/test_calltally.py.
+     */
+    private static void passthrough() {
+        Map<String, Object> row = Passthrough.inboxRow("+15550009999", "hello during catch up", 1793000000000L, 1793000000500L, 42L, -1);
+        StringBuilder out = new StringBuilder();
+        for (Map.Entry<String, Object> field : row.entrySet()) {
+            out.append(out.length() > 0 ? " " : "").append(field.getKey()).append("=").append(field.getValue());
+        }
+        System.out.println("passthrough-row " + out);
+        Map<String, Object> withSub = Passthrough.inboxRow("+1", "x", 1L, 0L, 7L, 3);
+        System.out.println("passthrough-sub " + withSub.get(Passthrough.SUBSCRIPTION_ID) + " " + row.containsKey(Passthrough.SUBSCRIPTION_ID));
+        System.out.println("passthrough-added " + Passthrough.added(0) + " | " + Passthrough.added(1) + " | " + Passthrough.added(5));
+        System.out.println("passthrough-last " + Passthrough.lastCaughtUp(0, Locale.US) + " | " + Passthrough.lastCaughtUp(1793000000000L, Locale.US));
     }
 
     /**

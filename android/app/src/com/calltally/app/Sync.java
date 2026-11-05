@@ -139,6 +139,9 @@ final class Sync {
         if (problem != null) out.append(out.length() > 0 ? "\n" : "").append(problem);
         if (schedule != null) out.append(out.length() > 0 ? "\n" : "").append("Background runs aren't set up: ").append(schedule);
         if (crash != null) out.append(out.length() > 0 ? "\n" : "").append("Last crash: ").append(crash);
+        // Catch up encrypted: the owner can never be left as the messaging app, or lose a picture message, without seeing it.
+        if (Roles.holdsSmsRole(context)) out.append(out.length() > 0 ? "\n" : "").append(Passthrough.HOLDS_ROLE);
+        if (saved.getBoolean("mms_pending", false)) out.append(out.length() > 0 ? "\n" : "").append(Passthrough.PICTURE_MISSING);
         return out.length() == 0 ? null : out.toString();
     }
 

@@ -20,6 +20,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.time.LocalDate;
+import java.util.Locale;
 
 /** Options: Who counts, the pay period, hiding ignored entries, the look, the last run, the phone check and the first-start page. Saved in the record. */
 public class OptionsActivity extends Screen {
@@ -35,8 +36,12 @@ public class OptionsActivity extends Screen {
     private CheckBox hide;
     private TextView runLine;
     private Button runNow;
+    private TextView catchLine;
+    private TextView stillBox;
+    private Button switchBack;
     private final Button[] modes = new Button[3];
     private final Button[] themes = new Button[5];
+    private static final int SWITCH_BACK = 21;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener runs = new SharedPreferences.OnSharedPreferenceChangeListener() {
         @Override
@@ -173,6 +178,47 @@ public class OptionsActivity extends Screen {
         });
         pair(phoneLine, phoneOpen);
 
+        heading("Catch up encrypted");
+        TextView catchInfo = muted("Read encrypted chats the phone only shows its messaging app.");
+        Button catchOpen = button("Catch up encrypted");
+        catchOpen.setId(R.id.catch_up);
+        catchOpen.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(OptionsActivity.this, CatchUpActivity.class));
+            }
+        });
+        pair(catchInfo, catchOpen);
+        catchLine = muted("");
+        catchLine.setId(R.id.catch_line);
+        catchLine.setTextSize(13);
+        column.addView(catchLine, wide());
+        // Shown only while Call Tally still holds the messaging role, so the owner is never left as the messaging app
+        // without seeing it, with a button to switch back to Google Messages.
+        stillBox = problemBox();
+        stillBox.setId(R.id.still_default);
+        stillBox.setText(Passthrough.HOLDS_ROLE);
+        LinearLayout.LayoutParams stillGap = wide();
+        stillGap.topMargin = dp(8);
+        column.addView(stillBox, stillGap);
+        switchBack = button("Switch back to Messages");
+        switchBack.setId(R.id.switch_back);
+        switchBack.setVisibility(View.GONE);
+        switchBack.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String previous = Sync.preferences(OptionsActivity.this).getString("prev_sms", Roles.GOOGLE_MESSAGES);
+                try {
+                    startActivityForResult(Roles.handBackIntent(OptionsActivity.this, previous), SWITCH_BACK);
+                } catch (RuntimeException error) {
+                    load();
+                }
+            }
+        });
+        LinearLayout.LayoutParams switchGap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        switchGap.topMargin = dp(8);
+        column.addView(switchBack, switchGap);
+
         heading("First start");
         Button again = button("Show the first-start page again");
         again.setId(R.id.start_again);
@@ -219,6 +265,13 @@ public class OptionsActivity extends Screen {
         Sync.preferences(this).unregisterOnSharedPreferenceChangeListener(runs);
     }
 
+    @Override
+    protected void onActivityResult(int code, int ignored, Intent data) {
+        super.onActivityResult(code, ignored, data);
+        // After the switch-back dialog, redraw the still-the-messaging-app line from what the phone now reports.
+        if (code == SWITCH_BACK && !isFinishing()) load();
+    }
+
     /** Reads the settings and the people away from the screen. */
     private void load() {
         final Context context = getApplicationContext();
@@ -227,6 +280,8 @@ public class OptionsActivity extends Screen {
             public void run() {
                 String who, pay, problem = null;
                 boolean hidden = false, havePeriod = false;
+                boolean holds = Roles.holdsSmsRole(context);
+                String caughtUp = Passthrough.lastCaughtUp(Sync.preferences(context).getLong("caught_up_at", 0), Locale.US);
                 try {
                     Record record = Record.get(context);
                     int ticked = 0;
@@ -242,7 +297,8 @@ public class OptionsActivity extends Screen {
                     who = pay = problem = Record.UNREADABLE;
                 }
                 final String whoText = who, payText = pay, trouble = problem;
-                final boolean hideIt = hidden, set = havePeriod;
+                final boolean hideIt = hidden, set = havePeriod, holdsRole = holds;
+                final String caughtUpText = caughtUp;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -254,6 +310,9 @@ public class OptionsActivity extends Screen {
                         hide.setChecked(hideIt);
                         if (trouble == null) hide.setOnCheckedChangeListener(hideChanged);
                         runLine.setText(Sync.status(context));
+                        catchLine.setText(caughtUpText);
+                        stillBox.setVisibility(holdsRole ? View.VISIBLE : View.GONE);
+                        switchBack.setVisibility(holdsRole ? View.VISIBLE : View.GONE);
                     }
                 });
             }

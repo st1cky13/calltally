@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.calltally.app"
-    android:versionCode="13" android:versionName="0.8.6">
+    android:versionCode="14" android:versionName="0.9.0">
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Catch up encrypted: to be offered the messaging role, Call Tally must be able to receive texts and picture
+         messages. It never sends: there is no SEND_SMS. An arriving text is passed through to the inbox unread. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
     <!-- Phone check names Google Messages' version, which Android hides from apps that don't say they look for it. -->
     <queries><package android:name="com.google.android.apps.messaging" /></queries>
     <application android:label="Call Tally" android:icon="@drawable/icon" android:allowBackup="false"
@@ -23,11 +28,50 @@
         <activity android:name=".PayActivity" android:exported="false" android:label="Pay periods" />
         <activity android:name=".WhoActivity" android:exported="false" android:label="Who counts" />
         <activity android:name=".PhoneCheckActivity" android:exported="false" android:label="Phone check" />
+        <activity android:name=".CatchUpActivity" android:exported="false" android:label="Catch up encrypted" />
         <service android:name=".SyncJob" android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".BootReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
+        <!-- Catch up encrypted: the four components Android requires before it will offer Call Tally the messaging
+             role. A text that arrives while it holds the role reaches the receiver below and is passed through to the
+             inbox unread (SmsReceiver); the send paths do nothing but close, because Call Tally never sends. -->
+        <receiver android:name=".SmsReceiver" android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".MmsReceiver" android:exported="true"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+        <activity android:name=".SendActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </activity>
+        <service android:name=".RespondService" android:exported="true"
+            android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
         <!--TEST_HOOK-->
     </application>
 </manifest>

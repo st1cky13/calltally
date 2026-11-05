@@ -67,4 +67,13 @@
     <item type="id" name="phone_check" />
     <item type="id" name="phone_share" />
     <item type="id" name="phone_row" />
+    <item type="id" name="catch_up" />
+    <item type="id" name="catch_explain" />
+    <item type="id" name="catch_continue" />
+    <item type="id" name="catch_cancel" />
+    <item type="id" name="catch_result" />
+    <item type="id" name="catch_holding" />
+    <item type="id" name="catch_line" />
+    <item type="id" name="still_default" />
+    <item type="id" name="switch_back" />
 </resources>

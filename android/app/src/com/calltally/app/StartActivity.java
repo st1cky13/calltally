@@ -80,6 +80,7 @@ public class StartActivity extends Screen {
         String[] lines = {
             "Call Tally shows your time on calls and your texts with the people you tick, by month and by pay period.",
             "It reads your call log, your texts and your contacts, on this phone only. It never reads what a text says.",
+            "Encrypted chats can be caught up from Options, which briefly makes Call Tally the phone's messaging app while it reads them.",
             "Nothing leaves the phone. There is no account and nothing is sent anywhere.",
             "The record is kept on this phone only, with no copy elsewhere. Removing the app or clearing its data erases it.",
             "It needs three permissions: your call log, your texts and your contacts. Tap Continue and Android will ask for each.",

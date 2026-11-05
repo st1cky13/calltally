@@ -36,6 +36,12 @@ public class TestHook extends BroadcastReceiver {
                         result.setResult(1, timeAddresses(context, timeAddr), null);
                         return;
                     }
+                    // The phone's messaging app, exactly as the app reads it, so the check can see it during a catch-up.
+                    if (intent.getBooleanExtra("default_sms", false)) {
+                        String current = Roles.defaultMessaging(context);
+                        result.setResult(1, current == null ? "none" : current, null);
+                        return;
+                    }
                     String payStart = intent.getStringExtra("pay_start");
                     if (payStart != null) {
                         if (PayPeriod.of(payStart, "14") == null) throw new IllegalArgumentException("pay_start");
