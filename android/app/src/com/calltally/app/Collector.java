@@ -202,7 +202,10 @@ final class Collector {
         return rows;
     }
 
-    /** Without the conversation list, several messages per conversation give a fuller and steadier list of people. */
+    /**
+     * For conversations the list doesn't name, such as RCS chats: their newest messages name their people. Without the
+     * list at all, every conversation is read this way.
+     */
     private Map<Long, List<String>> peopleFromMessages() {
         List<long[]> messages = new ArrayList<>();
         try (Cursor cursor = resolver.query(MMS, new String[] {"_id", "thread_id"}, null, null, "date DESC")) {
@@ -210,10 +213,14 @@ final class Collector {
             while (cursor.moveToNext()) messages.add(new long[] {cursor.getLong(0), cursor.getLong(1)});
         }
         Map<Long, List<String>> people = new HashMap<>();
+        Rules.Addresses addresses = new Rules.Addresses() {
+            @Override
+            public List<String> on(long messageId) {
+                return addressesOn(messageId);
+            }
+        };
         for (Map.Entry<Long, List<Long>> entry : Rules.fallbackMessages(messages, threadPeople.keySet()).entrySet()) {
-            List<List<String>> addresses = new ArrayList<>();
-            for (long id : entry.getValue()) addresses.add(addressesOn(id));
-            people.put(entry.getKey(), Rules.peopleOnMessages(addresses));
+            people.put(entry.getKey(), Rules.peopleFromMessages(entry.getValue(), addresses));
         }
         return people;
     }

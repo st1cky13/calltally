@@ -704,6 +704,31 @@ class AndroidRulesTests(ServerCase):
         # A picture message time stored in milliseconds is read as seconds.
         self.assertEqual(json.loads(rules["mms-millis"])["epoch"], 1793000000)
 
+    def test_rcs_chats(self):
+        """An RCS chat is listed under its chat id, not its people's numbers: it is left out of the conversation list and
+        its messages' address rows name its people, the way Google Messages' RCS chats looked on the user's phone."""
+        rules = self.run_rules()
+        rcs_id = "d4vtcmrqheztgmjwge4tah3emi2dondfga4dmzdgmi2gizbumfrtoodcmy3gmyrtgfswintgmm======@rcs.google.com"
+        own = "+12065550111"
+        # Phone-number recipients are unchanged; an RCS id, an email, an empty address or a missing one leaves the chat out.
+        self.assertEqual(rules["rcs-thread-people"], "{10=[+15551234567], 11=[+15551234567, 5559998888]}")
+        self.assertEqual(rules["rcs-phone"], "truefalsefalsefalsefalsefalse")
+        self.assertEqual(rules["rcs-people"], "{10=[+15551234567], 11=[+15551234567, 5559998888], "
+                                              f"919=[{own}, +15551234567, 5552223333, 5557776666], 930=[{own}, +15551234567], "
+                                              f"931=[{own}, 5559998888], 932=[]}}")
+        # One message naming two or more addresses is enough; a message naming fewer lets the next one be read.
+        self.assertEqual(rules["rcs-asked"], "[1, 2, 4, 6, 5]")
+        self.assertEqual(rules["rcs-texts"].split(" | "), [
+            'Group: Dana-Work, Sam - Work +2 / thread-919 / in', 'Group: Dana-Work, Sam - Work +2 / thread-919 / out',
+            "Dana-Work / +15551234567 / in", "Dana-Work / +15551234567 / in", "Dana-Work / 5551234567 / in", "Dana-Work / 5551234567 / in",
+            "skip:personal", "Dana-Work / 5551234567 / in", "Dana-Work / +15551234567 / in"])
+        self.assertEqual(rules["rcs-decided"], "[11, 919, 930] groups 1")
+        self.assertEqual(rules["rcs-ids"], f"5 {rcs_id} [address is not a phone number] | truefalsetrue | "
+                                           "1 +15551234567, 2 5559998888, 3 no address")
+        self.assertEqual(rules["rcs-chat"], f"chat 919 · people unknown to the conversation list, its messages name {own}, Dana-Work, "
+                                            f"5552223333, 5557776666 · ids 5 {rcs_id} [address is not a phone number] · left out of "
+                                            "the conversation list by the app · 2 messages · filed as Group: Dana-Work +3")
+
 
 class TermuxIdTests(ServerCase):
     """Runs without the build tools: the server still gives the rows the Termux script uploaded the same ids."""

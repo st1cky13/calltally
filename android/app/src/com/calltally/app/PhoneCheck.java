@@ -104,14 +104,15 @@ final class PhoneCheck {
 
     /**
      * The conversation list's ids for a chat, each with the address it stands for: "3 +12065550122, 7 no address". The
-     * app leaves a chat out of the list when any id has no address.
+     * app leaves a chat out of the list when any id has no address or an address that is not a phone number, which says so.
      */
     static String ids(String recipientIds, Map<String, String> addresses) {
         if (recipientIds == null || recipientIds.trim().isEmpty()) return "none";
         List<String> parts = new ArrayList<>();
         for (String id : recipientIds.trim().split("\\s+")) {
             String address = addresses.get(id);
-            parts.add(id + " " + (address == null ? "no address" : address));
+            parts.add(id + " " + (address == null ? "no address" : address)
+                + (address != null && !Rules.phoneAddress(address) ? " [address is not a phone number]" : ""));
         }
         return String.join(", ", parts);
     }
@@ -119,7 +120,7 @@ final class PhoneCheck {
     /** True when the list has ids for the chat but the app can't use them all, as Rules.threadPeople decides. */
     static boolean leftOut(String recipientIds, Map<String, String> addresses) {
         if (recipientIds == null || recipientIds.trim().isEmpty()) return false;
-        for (String id : recipientIds.trim().split("\\s+")) if (!addresses.containsKey(id)) return true;
+        for (String id : recipientIds.trim().split("\\s+")) if (!Rules.phoneAddress(addresses.get(id))) return true;
         return false;
     }
 

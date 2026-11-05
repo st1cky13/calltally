@@ -248,6 +248,85 @@ public class RulesCheck {
             Arrays.asList("5559998888", "+15551234567"), Arrays.asList("+15551234567"), new ArrayList<String>())));
         System.out.println("usable " + Rules.usableAddress("5551234567") + Rules.usableAddress("insert-address-token")
             + Rules.usableAddress("") + Rules.usableAddress(null));
+        rcs();
+    }
+
+    /**
+     * RCS chats: the conversation list names them by the chat's id, so they are left out of it and their messages' address
+     * rows name their people. Own is the phone's own number, which the address rows hold and the list leaves out.
+     */
+    private static void rcs() {
+        Map<String, String> work = Rules.countingNumbers(Arrays.asList(
+            person("a", "Dana-Work", true, true, "5551234567"), person("b", "Sam - Work", true, true, "5552223333")));
+        String id = "d4vtcmrqheztgmjwge4tah3emi2dondfga4dmzdgmi2gizbumfrtoodcmy3gmyrtgfswintgmm======@rcs.google.com";
+        String own = "+12065550111";
+        Map<String, String> canonical = new HashMap<>();
+        canonical.put("1", "+15551234567");
+        canonical.put("2", "5559998888");
+        canonical.put("5", id);
+        canonical.put("6", "someone@example.com");
+        canonical.put("7", "");
+        Map<Long, String> recipients = new HashMap<>();
+        recipients.put(10L, "1");
+        recipients.put(11L, "1 2");
+        recipients.put(919L, "5");
+        recipients.put(920L, "1 5");
+        recipients.put(921L, "6");
+        recipients.put(922L, "7");
+        Map<Long, List<String>> listed = Rules.threadPeople(canonical, recipients);
+        System.out.println("rcs-thread-people " + new TreeMap<>(listed));
+        System.out.println("rcs-phone " + Rules.phoneAddress("+1 (555) 123-4567") + Rules.phoneAddress(id) + Rules.phoneAddress("someone@example.com")
+            + Rules.phoneAddress("") + Rules.phoneAddress(null) + Rules.phoneAddress("Verizon"));
+
+        // Address rows shaped like chat 919 on the user's phone: cc, cc, cc, from, to; then a one-to-one RCS chat.
+        final Map<Long, List<String>> rows = new HashMap<>();
+        rows.put(1L, Arrays.asList("+15551234567", "5552223333", "5557776666", "+15551234567", own));
+        rows.put(2L, Arrays.asList("+15551234567", own));
+        rows.put(3L, Arrays.asList(own, "+15551234567"));
+        rows.put(4L, Arrays.asList(own));
+        rows.put(5L, new ArrayList<String>());
+        rows.put(6L, Arrays.asList("5559998888", own));
+        final List<Long> asked = new ArrayList<>();
+        Rules.Addresses addresses = new Rules.Addresses() {
+            @Override
+            public List<String> on(long messageId) {
+                asked.add(messageId);
+                return rows.get(messageId);
+            }
+        };
+        List<long[]> messages = new ArrayList<>();
+        for (long[] message : new long[][] {{1, 919}, {9, 919}, {2, 930}, {3, 930}, {4, 931}, {6, 931}, {5, 932}, {7, 10}}) messages.add(message);
+        Map<Long, List<String>> people = new TreeMap<>(listed);
+        for (Map.Entry<Long, List<Long>> entry : new TreeMap<>(Rules.fallbackMessages(messages, listed.keySet())).entrySet()) {
+            people.put(entry.getKey(), Rules.peopleFromMessages(entry.getValue(), addresses));
+        }
+        System.out.println("rcs-people " + people);
+        System.out.println("rcs-asked " + asked);
+        Rules.Texts texts = new Rules.Texts(work, people);
+        long s = 1793000000L;
+        StringBuilder out = new StringBuilder();
+        out.append(entryText(texts.mms(919, s, Rules.BOX_RECEIVED, 132))).append(" | ");
+        out.append(entryText(texts.mms(919, s + 1, Rules.BOX_SENT, 128))).append(" | ");
+        out.append(entryText(texts.mms(930, s + 2, Rules.BOX_RECEIVED, 132))).append(" | ");
+        out.append(entryText(texts.sms(930, "+15551234567", (s + 3) * 1000, Rules.BOX_RECEIVED))).append(" | ");
+        out.append(entryText(texts.sms(932, "5551234567", (s + 4) * 1000, Rules.BOX_RECEIVED))).append(" | ");
+        out.append(entryText(texts.sms(933, "5551234567", (s + 5) * 1000, Rules.BOX_RECEIVED))).append(" | ");
+        out.append(entryText(texts.mms(931, s + 6, Rules.BOX_RECEIVED, 132))).append(" | ");
+        out.append(entryText(texts.sms(10, "5551234567", (s + 7) * 1000, Rules.BOX_RECEIVED))).append(" | ");
+        out.append(entryText(texts.mms(11, s + 8, Rules.BOX_RECEIVED, 132)));
+        System.out.println("rcs-texts " + out);
+        System.out.println("rcs-decided " + new TreeMap<>(texts.decided()).keySet() + " groups " + texts.groups());
+
+        // The Phone check's chat line names why the chat was left out.
+        Map<String, String> counting = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567")));
+        System.out.println("rcs-ids " + PhoneCheck.ids("5", canonical) + " | " + PhoneCheck.leftOut("5", canonical) + PhoneCheck.leftOut("1 2", canonical)
+            + PhoneCheck.leftOut("1 3", canonical) + " | " + PhoneCheck.ids("1 2 3", canonical));
+        System.out.println("rcs-chat " + PhoneCheck.chatRow(919, null, people.get(919L), PhoneCheck.ids("5", canonical), PhoneCheck.leftOut("5", canonical),
+            2, 0, "Group: Dana-Work +3", counting, Collections.<String, String>emptyMap(), java.time.ZoneId.of("America/Los_Angeles")));
+    }
+
+    private static String entryText(Rules.Decision decision) {
+        return decision.entry == null ? "skip:" + decision.skipped : decision.entry.contact + " / " + decision.entry.number + " / " + decision.entry.direction;
     }
 
     /** The people table: which numbers count, and what a read of the phone's contacts changes. */

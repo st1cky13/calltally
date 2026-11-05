@@ -2,7 +2,7 @@
 """Checks the Android app end to end on the emulator, by reading the record it keeps on the phone.
 
 Starts the emulator, builds and installs a test copy of the app (CALLTALLY_DEBUG=true: debuggable, with the test hook),
-seeds contacts, calls and messages, then goes through the first start on the screen: the page, Continue and Android's
+seeds contacts, calls and messages (among them an RCS chat that the conversation list names only by its chat id), then goes through the first start on the screen: the page, Continue and Android's
 permission questions, Who counts with a tick, picking days on the pay period calendar, Skip, and the month screen with no pay
 period row. It sets the pay period through the test hook and turns it off again with Reset from Options. Then it
 sets it again, ticks Dana-Work and Sam - Work through it, runs the app and copies its record
@@ -58,6 +58,15 @@ CONTACTS = [("Dana-Work", ["+1 (555) 123-4567", "555-000-1111"]), ("Sam - Work",
 CALLS = [("15551234567", 0, 1, 872), (SAM, 100, 2, 3968), (DANA2, 200, 3, 7), (DANA1, 300, 5, 3), (DANA1, 400, 6, 0),
          (MOM, 500, 1, 600), (SAM, 600, 7, 45), (PLUMBING, 700, 2, 180)]
 # address, milliseconds after T, SMS type (1 inbox, 2 sent, 3 draft).
+# An RCS chat as Google Messages keeps it: the conversation list names it by the chat's id, its picture and group rows name
+# the people. OWN is a made-up number for the phone itself, which the rows name and the conversation list leaves out.
+RCS_ID = "d4vtcmrqheztgmjwge4tah3emi2dondfga4dmzdgmi2gizbumfrtoodcmy3gmyrtgfswintgmm======@rcs.google.com"
+OWN = "+12065550199"
+RCS_LABEL = "Group: Dana-Work, Sam - Work +1"
+# seconds after T, box (1 received, 2 sent), m_type, then address and address type (130 cc, 137 from, 151 to).
+RCS_MESSAGES = [(2200, 1, 132, [(DANA1, 130), (SAM, 130), (DANA1, 137), (OWN, 151)]),
+                (2300, 1, 132, [(DANA1, 130), (SAM, 130), (DANA1, 137), (OWN, 151)]),
+                (2400, 2, 128, [(OWN, 137), (DANA1, 151), (SAM, 151)])]
 TEXTS = [(DANA1, 1000_000, 1), (DANA1, 1060_000, 2), (MOM, 1100_000, 1), (DANA1, 1200_000, 3),
          (DANA2, 1300_100, 1), (DANA2, 1300_700, 1), (PLUMBING, 1400_000, 1)]
 
@@ -278,7 +287,30 @@ class Run:
                 self.sh("content", "insert", "--uri", f"content://mms/{message}/addr", "--bind", f"msg_id:l:{message}",
                         "--bind", f"address:s:{member}", "--bind", f"type:i:{137 if i == 0 else 151}", "--bind", "charset:i:106")
             groups[label] = thread
+        groups["rcs"] = self.thread_for(RCS_ID)
+        for offset, box, kind, addresses in RCS_MESSAGES:
+            self.sh("content", "insert", "--uri", "content://mms", "--bind", f"thread_id:l:{groups['rcs']}",
+                    "--bind", f"date:l:{T + offset}", "--bind", f"msg_box:i:{box}", "--bind", f"m_type:i:{kind}", "--bind", "read:i:1",
+                    "--bind", f"sub:s:{MARKER}")
+            message = self.last_id("content://mms")
+            for address, kind_of in addresses:
+                self.sh("content", "insert", "--uri", f"content://mms/{message}/addr", "--bind", f"msg_id:l:{message}",
+                        "--bind", f"address:s:{address}", "--bind", f"type:i:{kind_of}", "--bind", "charset:i:106")
         return groups
+
+    def canonical(self, thread):
+        """The conversation list's addresses for one chat, as the phone keeps them."""
+        out = self.sh("content", "query", "--uri", "content://mms-sms/conversations?simple=true", "--projection", "_id:recipient_ids")
+        ids = next((line.split("recipient_ids=")[1].split() for line in out.splitlines() if f"_id={thread}," in line), [])
+        listed = self.sh("content", "query", "--uri", "content://mms-sms/canonical-addresses")
+        return [line.split("address=")[1].strip() for line in listed.splitlines()
+                if "address=" in line and any(f"_id={i}," in line for i in ids)]
+
+    def time_addr(self, times):
+        """How long the app takes to read picture messages' address rows, through the test hook."""
+        out = self.sh("am", "broadcast", "--include-stopped-packages", "-a", f"{APP}.TEST_TICK", "-n", f"{APP}/.TestHook",
+                      "--ei", "time_addr", times)
+        return out.split('data="')[1].split('"')[0] if 'data="' in out else out.strip()
 
     def call(self, number, offset, kind, duration):
         self.sh("content", "insert", "--uri", "content://call_log/calls", "--bind", f"number:s:{number}",
@@ -457,6 +489,9 @@ def expected(groups, zone):
     if "pair" in groups:
         # A chat with one work contact and one other person shows under that contact.
         out.append(item("text", DANA1, T + 2100, "in", "Dana-Work"))
+    # The RCS chat, named by its messages: a group of Dana and Sam with the phone's own number as the one other.
+    for offset, box, _, _ in RCS_MESSAGES:
+        out.append(item("text", f"thread-{groups['rcs']}", T + offset, "in" if box == 1 else "out", RCS_LABEL))
     return out
 
 
@@ -479,6 +514,8 @@ def main():
         check("test app built and installed", True)
         groups = run.seed()
         check("contacts, calls, texts and group messages seeded", True)
+        listed = run.canonical(groups["rcs"])
+        check("the RCS chat is in the conversation list under its chat id only", listed == [RCS_ID], str(listed))
         zone = run.device_zone()
         want = expected(groups, zone)
         density = run.density()
@@ -693,6 +730,11 @@ def main():
               set(ticked) == {"Dana-Work", "Sam - Work"}
               and ticked["Dana-Work"]["numbers"] == {"5551234567", "5550001111"} and ticked["Sam - Work"]["numbers"] == {"5552223333"}
               and all(p["ticked"] == 1 and p["on_phone"] == 1 and p["first_ticked_at"] for p in ticked.values()), str(ticked))
+        rcs = [r for r in got if r["number"] == f"thread-{groups['rcs']}"]
+        check("the RCS chat's three messages count under the group of Dana and Sam, read from their address rows",
+              sorted((r["epoch"] - T, r["direction"], r["contact"]) for r in rcs)
+              == [(2200, "in", RCS_LABEL), (2300, "in", RCS_LABEL), (2400, "out", RCS_LABEL)], str(rcs))
+        print(f"info  address rows read by the app: {run.time_addr(500)}", flush=True)
         status = run.prefs().get("status", "")
         # Scheduling the periodic job can start a second run at once, which finds the same and adds nothing new.
         check("the run's status is clean", f"{len(want)} calls and texts with 2 ticked people found, " in status
@@ -739,6 +781,16 @@ def main():
               bool(by_id(phone_nodes, "phone_share")) and bool(by_id(phone_nodes, "close"))
               and any("never reads what a message says" in (n.get("text") or "") for n in phone_nodes) and not small and not outside,
               f"small {small[:3]} outside {outside[:3]}")
+        # The chat line names the filing as the record remembers it: the first start's run filed the chat as a group while
+        # only Dana was ticked. Its rows count under the group's current label.
+        rcs_line = [t for t in seen if t.startswith(f"chat {groups['rcs']} · ")]
+        check("Phone check marks the RCS chat as left out of the conversation list, says why, and shows it filed as a group",
+              len(rcs_line) == 1 and f"ids " in rcs_line[0] and f"{RCS_ID} [address is not a phone number]" in rcs_line[0]
+              and "left out of the conversation list by the app" in rcs_line[0] and "its messages name " in rcs_line[0]
+              and rcs_line[0].endswith("filed as Group: Dana-Work +2"), str(rcs_line))
+        rcs_rows = [t for t in seen if " · picture or group row" in t and f" · chat {groups['rcs']} · " in t]
+        check("Phone check shows the RCS chat's rows counting under the group",
+              len(rcs_rows) == 3 and all(f"counts under {RCS_LABEL}" in t for t in rcs_rows), str(rcs_rows))
         crashes = run.adb("logcat", "-d", "-b", "crash", check=False)
         check("Phone check opened without a crash", APP not in crashes, crashes.strip()[-400:])
         (out / "phone-check.txt").write_text("\n".join(seen) + "\n")
@@ -755,7 +807,13 @@ def main():
             raise RuntimeError("no run finished")
         second = run.record()
         after = rows(second)
-        check("nothing was removed and nothing new of Dana's came in", after == got,
+        # The RCS group still has Sam ticked, so its rows stay under a label without Dana; nothing else changes.
+        rcs_thread = f"thread-{groups['rcs']}"
+
+        def unlabelled_rcs(found):
+            return [{k: v for k, v in r.items() if k != "contact" or r["number"] != rcs_thread} for r in found]
+        check("nothing was removed and nothing new of Dana's came in", unlabelled_rcs(after) == unlabelled_rcs(got)
+              and {r["contact"] for r in after if r["number"] == rcs_thread} == {"Group: Sam - Work +2"},
               f"{len(after)} rows, {len(got)} before; new {[r for r in after if r not in got][:2]}")
         dana = people(second).get("Dana-Work", {})
         check("Dana stays in the people table, unticked, with her numbers",

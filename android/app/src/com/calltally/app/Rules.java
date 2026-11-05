@@ -191,8 +191,9 @@ final class Rules {
 
     /**
      * Who is in each conversation, from the conversation list: thread ids with their recipient ids, and what each
-     * recipient id stands for. A conversation with a recipient that can't be looked up is left out. Android leaves your
-     * own number out of this list.
+     * recipient id stands for. A conversation with a recipient that can't be looked up, or that stands for something other
+     * than a phone number, is left out, and its messages name its people instead. An RCS chat is listed under the chat's
+     * own id, such as "…@rcs.google.com", rather than its people's numbers. Android leaves your own number out of this list.
      */
     static Map<Long, List<String>> threadPeople(Map<String, String> addresses, Map<Long, String> recipientIds) {
         Map<Long, List<String>> people = new HashMap<>();
@@ -203,12 +204,17 @@ final class Rules {
             boolean complete = true;
             for (String id : ids.trim().split("\\s+")) {
                 String address = addresses.get(id);
-                if (address == null) complete = false;
+                if (address == null || !phoneAddress(address)) complete = false;
                 else found.add(address);
             }
             if (complete) people.put(thread.getKey(), found);
         }
         return people;
+    }
+
+    /** An address in the conversation list that is a phone number: it has digits and is no email or RCS chat id. */
+    static boolean phoneAddress(String address) {
+        return address != null && address.indexOf('@') < 0 && !numberKey(address).isEmpty();
     }
 
     /**
@@ -228,6 +234,26 @@ final class Rules {
             if (list.size() < FALLBACK_MESSAGES) list.add(message[0]);
         }
         return ids;
+    }
+
+    /** The usable addresses on one picture message, as the phone hands them over. */
+    interface Addresses {
+        List<String> on(long messageId);
+    }
+
+    /**
+     * The people of one conversation from its newest messages (ids, newest first, at most FALLBACK_MESSAGES). The address
+     * rows of one message name everyone in a group or an RCS chat, so reading stops at the first message that names two or
+     * more different addresses.
+     */
+    static List<String> peopleFromMessages(List<Long> ids, Addresses addresses) {
+        List<List<String>> found = new ArrayList<>();
+        for (long id : ids) {
+            List<String> on = addresses.on(id);
+            found.add(on);
+            if (new HashSet<>(on).size() >= 2) break;
+        }
+        return peopleOnMessages(found);
     }
 
     /** Everyone named on a conversation's messages, sorted, once each. */

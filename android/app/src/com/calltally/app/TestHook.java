@@ -16,6 +16,8 @@ import java.util.Set;
  *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --esa numbers 5551234567 [--ez untick true]
  * It also sets the pay period start, as the first start or Options would, for the checks that need one:
  *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --es pay_start 2026-10-25
+ * And it times reads of picture messages' address rows, as a run makes them, to size what a run costs:
+ *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --ei time_addr 200
  */
 public class TestHook extends BroadcastReceiver {
     static final String ACTION = "com.calltally.app.TEST_TICK";
@@ -29,6 +31,11 @@ public class TestHook extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
+                    int timeAddr = intent.getIntExtra("time_addr", 0);
+                    if (timeAddr > 0) {
+                        result.setResult(1, timeAddresses(context, timeAddr), null);
+                        return;
+                    }
                     String payStart = intent.getStringExtra("pay_start");
                     if (payStart != null) {
                         if (PayPeriod.of(payStart, "14") == null) throw new IllegalArgumentException("pay_start");
@@ -67,6 +74,26 @@ public class TestHook extends BroadcastReceiver {
                 }
             }
         }).start();
+    }
+
+    /** Reads the address rows of the newest picture messages, up to times reads, cycling through them: "200 reads in 310 ms". */
+    private static String timeAddresses(Context context, int times) {
+        android.content.ContentResolver resolver = context.getContentResolver();
+        List<Long> ids = new ArrayList<>();
+        try (android.database.Cursor cursor = resolver.query(android.net.Uri.parse("content://mms"), new String[] {"_id"}, null, null, "date DESC")) {
+            while (cursor != null && cursor.moveToNext()) ids.add(cursor.getLong(0));
+        }
+        if (ids.isEmpty()) return "no picture messages";
+        long started = System.nanoTime();
+        int rows = 0;
+        for (int i = 0; i < times; i++) {
+            android.net.Uri uri = android.net.Uri.parse("content://mms/" + ids.get(i % ids.size()) + "/addr");
+            try (android.database.Cursor cursor = resolver.query(uri, new String[] {"address"}, null, null, null)) {
+                while (cursor != null && cursor.moveToNext()) if (Rules.usableAddress(cursor.getString(0))) rows++;
+            }
+        }
+        long millis = (System.nanoTime() - started) / 1000000L;
+        return times + " reads in " + millis + " ms, " + rows + " addresses";
     }
 
     private static boolean owns(Rules.Person person, Set<String> keys) {

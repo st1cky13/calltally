@@ -304,10 +304,15 @@ public class PhoneCheckActivity extends Screen {
         Map<Long, List<String>> threadPeople = new HashMap<>(listed);
         Map<Long, List<String>> fromMessages = new HashMap<>();
         if (pictures != null) {
+            final ContentResolver reader = resolver;
+            Rules.Addresses usable = new Rules.Addresses() {
+                @Override
+                public List<String> on(long messageId) {
+                    return usableAddressesOn(reader, messageId);
+                }
+            };
             for (Map.Entry<Long, List<Long>> entry : Rules.fallbackMessages(pictures.ids, threadPeople.keySet()).entrySet()) {
-                List<List<String>> found = new ArrayList<>();
-                for (long id : entry.getValue()) found.add(usableAddressesOn(resolver, id));
-                fromMessages.put(entry.getKey(), Rules.peopleOnMessages(found));
+                fromMessages.put(entry.getKey(), Rules.peopleFromMessages(entry.getValue(), usable));
             }
         }
         threadPeople.putAll(fromMessages);
