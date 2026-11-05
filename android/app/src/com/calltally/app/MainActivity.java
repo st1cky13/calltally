@@ -12,9 +12,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -47,6 +49,12 @@ public class MainActivity extends Screen {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean asked;
     private boolean narrow;
+    /** The weekday names over the calendar, whose lead drawMonth drops once if a name and its lead would not fit. */
+    private final TextView[] weekNames = new TextView[7];
+    private boolean weekFitted;
+    private int digitLead = -1;
+    /** The room inside a day cell for its time and texts, set by drawMonth. */
+    private int lineRoom;
     private int asking;
 
     private LocalDate today;
@@ -271,13 +279,14 @@ public class MainActivity extends Screen {
         // Each weekday sits over its column with the days' own gaps, starting where a two-digit day's number starts in
         // its circle's room, so Sun lines up with the numbers below it.
         LinearLayout week = row();
-        float digits = text("00", 11, muted, false).getPaint().measureText("00");
-        int lead = dp(narrow ? 2 : 4) + Math.max(0, Math.round((dp(22) - digits) / 2));
+        int lead = dp(narrow ? 2 : 4) + digitLead();
         for (int c = 0; c < WEEK.length; c++) {
             TextView day = caption(WEEK[c]);
             day.setGravity(Gravity.START);
             day.setSingleLine(true);
+            day.setEllipsize(null);
             day.setPadding(lead, 0, 0, 0);
+            weekNames[c] = day;
             LinearLayout.LayoutParams dayParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
             if (c > 0) dayParams.leftMargin = dp(narrow ? 2 : 4);
             week.addView(day, dayParams);
@@ -492,14 +501,18 @@ public class MainActivity extends Screen {
         int count = view.lengthOfMonth();
         int rows = (lead + count + 6) / 7;
         int day = 1 - lead;
-        // A short phone gets lower rows, so the whole month and All time fit without scrolling; a busy day still holds
-        // its three lines in the lower row.
+        // A short phone gets lower rows, so the whole month and All time fit without scrolling; a busy day's three lines
+        // still fit the lower row through their negative margins. A larger font size makes the rows taller with it, so
+        // the screen scrolls rather than cut the lines off.
         int least = getResources().getConfiguration().screenHeightDp < 700 ? 44 : 52;
+        int rowMin = Math.round(dp(least) * Math.max(1f, getResources().getConfiguration().fontScale));
+        fitWeekNames();
+        lineRoom = column() - dp(narrow ? 2 : 4) - dp(narrow ? 1 : 3);
         for (int r = 0; r < rows; r++) {
             LinearLayout row = row();
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
             if (r > 0) rowParams.topMargin = dp(narrow ? 2 : 4);
-            row.setMinimumHeight(dp(least));
+            row.setMinimumHeight(rowMin);
             for (int c = 0; c < 7; c++, day++) {
                 LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
                 if (c > 0) cellParams.leftMargin = dp(narrow ? 2 : 4);
@@ -518,18 +531,44 @@ public class MainActivity extends Screen {
         drawNav();
     }
 
+    /** How far a two-digit day number starts inside its 22dp room: where the time, the texts and the weekdays start. */
+    private int digitLead() {
+        if (digitLead < 0) {
+            float digits = text("00", 11, muted, false).getPaint().measureText("00");
+            digitLead = Math.max(0, Math.round((dp(22) - digits) / 2));
+        }
+        return digitLead;
+    }
+
+    /** Once: if the widest weekday name and its lead would not fit a column, the names start at the column's edge. */
+    private void fitWeekNames() {
+        if (weekFitted || weekNames[0] == null) return;
+        weekFitted = true;
+        int column = column();
+        float widest = 0;
+        for (int c = 0; c < WEEK.length; c++) {
+            widest = Math.max(widest, weekNames[c].getPaint().measureText(WEEK[c]));
+        }
+        if (weekNames[0].getPaddingLeft() + widest <= column) return;
+        for (TextView name : weekNames) name.setPadding(0, 0, 0, 0);
+    }
+
+    /** A calendar column's width: the page's width less its side margins and the gaps between the seven days. */
+    private int column() {
+        return (dp(getResources().getConfiguration().screenWidthDp) - 2 * edge() - 6 * dp(narrow ? 2 : 4)) / 7;
+    }
+
     private LinearLayout cell(final LocalDate date) {
         LinearLayout cell = new LinearLayout(this);
         cell.setId(R.id.day_cell);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setPadding(dp(narrow ? 2 : 4), 0, dp(narrow ? 1 : 3), dp(1));
         // The call time leads; the day's number and its texts are small and quiet around it. The number has a 22dp room
-        // at the top, round for today's circle; the lines below sit close, into the font's empty space above the digits
-        // and below them, so a busy day still fits a short row.
+        // at the top, round for today's circle; the time reaches 3dp up into it and the texts sit 1dp into the time's
+        // empty space below its digits, so through these negative margins a busy day's three lines fit a 44dp row.
         TextView number = text(String.valueOf(date.getDayOfMonth()), 11, muted, false);
         number.setGravity(Gravity.CENTER);
         number.setMinWidth(dp(22));
-        number.setMinimumWidth(dp(22));
         number.setIncludeFontPadding(false);
         FitText time = new FitText(this, narrow ? 14 : 15);
         time.setTextColor(txt);
@@ -544,7 +583,7 @@ public class MainActivity extends Screen {
         timeClose.topMargin = -dp(3);
         cell.addView(time, timeClose);
         LinearLayout.LayoutParams textsClose = wide();
-        textsClose.topMargin = -dp(3);
+        textsClose.topMargin = -dp(1);
         cell.addView(texts, textsClose);
         cell.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -571,22 +610,30 @@ public class MainActivity extends Screen {
         number.setTextColor(isToday ? ink : !used && date.isAfter(today) ? faint : muted);
         number.setTypeface(isToday ? medium() : Typeface.DEFAULT);
         StringBuilder words = new StringBuilder(Words.monthName(date.getMonthValue()) + " " + date.getDayOfMonth());
-        if (data != null && data.calls > 0) {
-            time.show(Words.clockTime(data.callS));
+        String clock = data != null && data.calls > 0 ? Words.clockTime(data.callS) : "";
+        String said = data != null && data.texts > 0 ? Words.plural(data.texts, "text")
+            : used && data.calls == 0 ? (data.unanswered > 0 ? "no answer" : "ignored") : "";
+        // The time and texts start under the day number's digits, unless that lead would push them out of a narrow
+        // cell, where they start at its edge instead.
+        TextPaint least = new TextPaint(time.getPaint());
+        least.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11, getResources().getDisplayMetrics()));
+        float need = Math.max(least.measureText(clock), texts.getPaint().measureText(said));
+        int pad = need + digitLead() <= lineRoom ? digitLead() : 0;
+        time.setPadding(pad, 0, 0, 0);
+        texts.setPadding(pad, 0, 0, 0);
+        if (!clock.isEmpty()) {
+            time.show(clock);
             time.setVisibility(View.VISIBLE);
             words.append(", call time ").append(Words.fullTime(data.callS));
         } else {
             time.show("");
             time.setVisibility(View.GONE);
         }
+        texts.setText(said);
         if (data != null && data.texts > 0) {
-            texts.setText(Words.plural(data.texts, "text"));
             words.append(", ").append(Words.plural(data.texts, "text"));
         } else if (used && data.calls == 0) {
-            texts.setText(data.unanswered > 0 ? "no answer" : "ignored");
             words.append(data.unanswered > 0 ? ", calls not answered only" : ", ignored entries only");
-        } else {
-            texts.setText("");
         }
         cell.setContentDescription(words);
     }
