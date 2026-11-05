@@ -74,7 +74,7 @@ class AndroidRulesTests(RecordCase):
             source = ROOT / "android" / "app"
             app = source / "src" / "com" / "calltally" / "app"
             subprocess.run([str(self.TOOLS / "javac"), "-nowarn", "-d", str(out), str(app / "Rules.java"), str(app / "Ledger.java"),
-                            str(app / "Sql.java"), str(app / "PayPeriod.java"), str(app / "Words.java"), str(app / "PhoneCheck.java"),
+                            str(app / "Sql.java"), str(app / "PayPeriod.java"), str(app / "Words.java"),
                             str(app / "Passthrough.java"), str(source / "check/RulesCheck.java")], check=True, capture_output=True)
             done = subprocess.run([str(self.TOOLS / "java"), "-cp", str(out), "com.calltally.app.RulesCheck"],
                                   check=True, capture_output=True, text=True, env={**os.environ, "TZ": "America/Los_Angeles"})
@@ -156,7 +156,6 @@ class AndroidRulesTests(RecordCase):
         self.assertEqual(rules["own-filed-chat"], "Dana-Work | 5551234567")
         self.assertEqual(rules["own-ticked"], "Group: Dana-Work, Me +1 | thread-43")
         self.assertEqual(rules["own-texts"], "Group: Dana-Work +2 / thread-44 / out")
-        self.assertEqual(rules["phone-own"], "Your numbers: none learned yet | Your numbers: 2065550199, 5550009999")
 
     def test_contact_with_a_new_key_keeps_its_person(self):
         self.assertEqual(self.run_rules()["moved"], "{old-dana=new-dana} {} {}")
@@ -174,25 +173,6 @@ class AndroidRulesTests(RecordCase):
             self.assertEqual([r[1] for r in app.execute("PRAGMA table_info(conversations)")], ["thread", "number", "contact"])
         finally:
             app.close()
-
-    def test_phone_check_rows(self):
-        rules = self.run_rules()
-        self.assertEqual(rules["phone-when"], "Oct 26, 5:45 AM | Oct 26, 12:30 PM")
-        self.assertEqual(rules["phone-top"], "Android 15, Google Messages not installed, default messaging app com.google.android.apps.messaging")
-        self.assertEqual(rules["phone-counts"], "12 chats on the phone, 1 text row, picture and group rows couldn't be read | Conversation list: not readable")
-        self.assertEqual(rules["phone-chat"], "chat 1003 · Dana-Work, Mom, 5557776666 · ids 3 +15551234567, 4 5559998888, 5 no address"
-                         " · left out of the conversation list by the app · 1 message · newest Oct 26, 5:45 AM · filed as Group: Dana-Work +2")
-        self.assertEqual(rules["phone-unknown"], "chat 1004 · people unknown to the conversation list, its messages name nobody"
-                         " · no row in the conversation list · 0 messages · filed as not counted")
-        self.assertEqual(rules["phone-text"], "Oct 26, 5:45 AM · received · text row · chat 1002 · address +15551234567 · creator unknown"
-                         " · protocol 0 · counts under Dana-Work, by the row's address")
-        self.assertEqual(rules["phone-picture"], "Oct 26, 5:45 AM · received · picture or group row [132] · chat 1005 · no addresses on the row"
-                         " · creator com.google.android.apps.messaging · counts nothing: no people found, by the messages' addresses")
-        self.assertEqual(rules["phone-problem"], "Text rows couldn't be read: IllegalArgumentException, Invalid column creator"
-                         " | The conversation list couldn't be read: NullPointerException")
-        self.assertEqual(rules["phone-other"].split(" | "), [
-            "Oct 26, 5:45 AM · other [3] · text row · chat 1002 · address 5557776666 · creator unknown · skipped: not received or sent",
-            "from +15551234567, to insert-address-token", "by the conversation list", "by the remembered filing", "null"])
 
     def test_catch_up_passthrough_pieces(self):
         rules = self.run_rules()
@@ -390,7 +370,6 @@ class AndroidRulesTests(RecordCase):
         """An RCS chat is listed under its chat id, not its people's numbers: it is left out of the conversation list and
         its messages' address rows name its people, the way Google Messages' RCS chats looked on the user's phone."""
         rules = self.run_rules()
-        rcs_id = "d4vtcmrqheztgmjwge4tah3emi2dondfga4dmzdgmi2gizbumfrtoodcmy3gmyrtgfswintgmm======@rcs.google.com"
         own = "+12065550111"
         # Phone-number recipients are unchanged; an RCS id, an email, an empty address or a missing one leaves the chat out.
         self.assertEqual(rules["rcs-thread-people"], "{10=[+15551234567], 11=[+15551234567, 5559998888]}")
@@ -405,11 +384,6 @@ class AndroidRulesTests(RecordCase):
             "Dana-Work / +15551234567 / in", "Dana-Work / +15551234567 / in", "Dana-Work / 5551234567 / in", "Dana-Work / 5551234567 / in",
             "skip:personal", "Dana-Work / 5551234567 / in", "Dana-Work / +15551234567 / in"])
         self.assertEqual(rules["rcs-decided"], "[11, 919, 930] groups 1")
-        self.assertEqual(rules["rcs-ids"], f"5 {rcs_id} [address is not a phone number] | truefalsetrue | "
-                                           "1 +15551234567, 2 5559998888, 3 no address")
-        self.assertEqual(rules["rcs-chat"], f"chat 919 · people unknown to the conversation list, its messages name {own}, Dana-Work, "
-                                            f"5552223333, 5557776666 · ids 5 {rcs_id} [address is not a phone number] · left out of "
-                                            "the conversation list by the app · 2 messages · filed as Group: Dana-Work +3")
 
 
 class ReferenceTests(RecordCase):

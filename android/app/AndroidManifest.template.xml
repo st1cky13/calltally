@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.calltally.app"
-    android:versionCode="27" android:versionName="0.9.13">
+    android:versionCode="28" android:versionName="0.9.14">
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
-    <!-- Phone check names Google Messages' version, which Android hides from apps that don't say they look for it. -->
+    <!-- The app names Google Messages' version where it needs it, which Android hides from apps that don't say they look for it. -->
     <queries><package android:name="com.google.android.apps.messaging" /></queries>
     <application android:label="Call Tally" android:icon="@drawable/icon" android:allowBackup="false"
         android:debuggable="__DEBUGGABLE__"
@@ -27,7 +27,6 @@
         <activity android:name=".OptionsActivity" android:exported="false" android:label="Options" />
         <activity android:name=".PayActivity" android:exported="false" android:label="Pay periods" />
         <activity android:name=".WhoActivity" android:exported="false" android:label="Contacts" />
-        <activity android:name=".PhoneCheckActivity" android:exported="false" android:label="Phone check" />
         <activity android:name=".CatchUpActivity" android:exported="false" android:label="Catch up encrypted" />
         <service android:name=".SyncJob" android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />

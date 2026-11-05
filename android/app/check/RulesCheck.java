@@ -38,7 +38,6 @@ public class RulesCheck {
         own();
         moved();
         search();
-        phoneCheck();
         passthrough();
     }
 
@@ -410,13 +409,6 @@ public class RulesCheck {
         out.append(entryText(texts.mms(11, s + 8, Rules.BOX_RECEIVED, 132)));
         System.out.println("rcs-texts " + out);
         System.out.println("rcs-decided " + new TreeMap<>(texts.decided()).keySet() + " groups " + texts.groups());
-
-        // The Phone check's chat line names why the chat was left out.
-        Map<String, String> counting = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567")));
-        System.out.println("rcs-ids " + PhoneCheck.ids("5", canonical) + " | " + PhoneCheck.leftOut("5", canonical) + PhoneCheck.leftOut("1 2", canonical)
-            + PhoneCheck.leftOut("1 3", canonical) + " | " + PhoneCheck.ids("1 2 3", canonical));
-        System.out.println("rcs-chat " + PhoneCheck.chatRow(919, null, people.get(919L), PhoneCheck.ids("5", canonical), PhoneCheck.leftOut("5", canonical),
-            2, 0, "Group: Dana-Work +3", counting, Collections.<String, String>emptyMap(), java.time.ZoneId.of("America/Los_Angeles")));
     }
 
     private static String entryText(Rules.Decision decision) {
@@ -581,40 +573,6 @@ public class RulesCheck {
             else out.append(c);
         }
         return out.append('"').toString();
-    }
-
-    /** The Phone check screen's rows, from plain values: a chat, a chat the app leaves out, a text row and a picture row. */
-    private static void phoneCheck() {
-        java.time.ZoneId zone = java.time.ZoneId.of("America/Los_Angeles");
-        Map<String, String> counting = Rules.countingNumbers(Arrays.asList(person("a", "Dana-Work", true, true, "5551234567")));
-        Map<String, String> unticked = Collections.singletonMap("5559998888", "Mom");
-        long millis = 1793018700000L;
-        Map<String, String> canonical = new HashMap<>();
-        canonical.put("3", "+15551234567");
-        canonical.put("4", "5559998888");
-        System.out.println("phone-when " + PhoneCheck.when(millis, zone) + " | " + PhoneCheck.when(1793043000000L, zone));
-        System.out.println("phone-top " + PhoneCheck.topLine("15", null, "com.google.android.apps.messaging"));
-        System.out.println("phone-counts " + PhoneCheck.countsLine(12, 1, -1) + " | " + PhoneCheck.listLine(false));
-        System.out.println("phone-own " + PhoneCheck.ownLine(new ArrayList<String>()) + " | "
-            + PhoneCheck.ownLine(Arrays.asList("5550009999", "2065550199")));
-        System.out.println("phone-chat " + PhoneCheck.chatRow(1003, Arrays.asList("+15551234567", "5559998888", "5557776666"), null,
-            PhoneCheck.ids("3 4 5", canonical), PhoneCheck.leftOut("3 4 5", canonical), 1, millis, "Group: Dana-Work +2", counting, unticked, zone));
-        System.out.println("phone-unknown " + PhoneCheck.chatRow(1004, null, Collections.<String>emptyList(), null, false, 0, 0, null,
-            counting, unticked, zone));
-        Rules.Texts texts = new Rules.Texts(counting, Collections.singletonMap(1005L, Collections.<String>emptyList()));
-        Rules.Decision text = texts.sms(1002, "+15551234567", millis, 1);
-        System.out.println("phone-text " + PhoneCheck.textRow(millis, 1, 1002, "+15551234567", null, "protocol 0",
-            PhoneCheck.decision(text, PhoneCheck.branch(true, null, false, false), false), zone));
-        Rules.Decision picture = texts.mms(1005, millis / 1000, 1, 132);
-        System.out.println("phone-picture " + PhoneCheck.pictureRow(millis, 1, 132, 1005, "", 0, "com.google.android.apps.messaging",
-            PhoneCheck.decision(picture, PhoneCheck.branch(false, Collections.<String>emptyList(), false, false), true), zone));
-        System.out.println("phone-problem " + PhoneCheck.problem("Text rows", "IllegalArgumentException", "Invalid column\n creator") + " | "
-            + PhoneCheck.problem("The conversation list", "NullPointerException", null));
-        System.out.println("phone-other " + PhoneCheck.textRow(millis, 3, 1002, "5557776666", null, "",
-            PhoneCheck.decision(texts.sms(1002, "5557776666", millis, 3), null, false), zone) + " | "
-            + PhoneCheck.addresses(Arrays.asList("+15551234567", "insert-address-token"), Arrays.asList(137, 151)) + " | "
-            + PhoneCheck.branch(false, Arrays.asList("a", "b"), true, false) + " | " + PhoneCheck.branch(false, Arrays.asList("a", "b"), true, true)
-            + " | " + PhoneCheck.branch(false, null, false, false));
     }
 
     private static void call(List<Rules.Entry> out, Map<String, String> work, String number, long millis, int type, long seconds) {
