@@ -18,9 +18,12 @@ pass or fail line per check, exits 1 on any fail, and always stops the emulator 
 go into the output folder's shots/ unless --shots names another.
 
 It also opens Catch up encrypted and checks its screen and wording, but skips the steps that need the Android system role
-dialogs (becoming the default messaging app, the mid-hold text pass-through, and handing the role back): those are not
-reliably drivable on this emulator, so it prints a "skipped" line and leaves them for a check on a real phone. The plain
-pieces behind them are covered by tests/test_calltally.py.
+dialogs (becoming the default messaging app through the in-app request, the mid-hold text pass-through, and handing the
+role back): those are not reliably drivable on this emulator, so it prints a "skipped" line and leaves them for a check on
+a real phone. It does drive the path 0.9.2 adds: it sets Call Tally as the default messaging app from adb, then checks
+that Continue reads straight away with no role dialog (the fix), and restores the default afterwards. If neither adb
+mechanism can set the default on this AVD, that path is skipped too. The plain pieces behind all of this are covered by
+tests/test_calltally.py.
 
 Usage: python3 tools/emulator_check.py [--out FOLDER] [--shots FOLDER]   (default: a new folder under $TMPDIR)
 Needs the Android tools in ~/local/calltally-build (see android/app/build.sh) and the AVD "ct". Takes a few minutes.
@@ -55,6 +58,8 @@ DATABASE = "calltally.db"
 PERMISSIONS = ("android.permission.READ_CALL_LOG", "android.permission.READ_SMS", "android.permission.READ_CONTACTS")
 MARKER = "zebra marmalade 4417"
 NOT_ALLOWED = "Needs permission. Open this app to allow it."
+GOOGLE_SMS = "com.android.messaging"  # the emulator image's default messaging app
+REFUSED_LINE = "The messaging app wasn't changed, so nothing was read."
 T = 1793000000  # 2026-10-26 in the morning, Pacific time. Every seeded time is fixed, so two runs keep the same rows.
 
 DANA1, DANA2, SAM, MOM, PLUMBING = "+15551234567", "5550001111", "5552223333", "5559998888", "5557776666"
@@ -977,6 +982,38 @@ def main():
             run.tap(by_id(ns, "catch_up")[0])
             return run.wait_for(lambda n2: bool(by_id(n2, "catch_continue")), 30)
 
+        def set_default_sms(pkg):
+            """Makes pkg the default messaging app from adb, preferring the role manager. Only falls back to the secure
+            setting when the role command is unavailable on this image, because writing that setting for an app the role
+            manager won't accept leaves the default in a stale state. Returns which mechanism made Telephony report pkg
+            ('cmd role' or 'settings'), or '' when neither could."""
+            out = run.adb("shell", "cmd", "role", "add-role-holder", "--user", "0", "android.app.role.SMS", pkg,
+                          check=False) or ""
+            cmd_role_missing = any(s in out for s in ("Unknown command", "Can't find service", "No shell command", "not found"))
+            if not cmd_role_missing:
+                for _ in range(5):
+                    if sms_default() == pkg:
+                        return "cmd role"
+                    time.sleep(1)
+                return ""  # the role command exists but wouldn't take; don't write the secure setting and strand it
+            run.adb("shell", "settings", "put", "secure", "sms_default_application", pkg, check=False)
+            for _ in range(5):
+                if sms_default() == pkg:
+                    return "settings"
+                time.sleep(1)
+            return ""
+
+        def restore_default_sms(pkg):
+            """Puts the default messaging app back, resetting BOTH the role and the secure setting, so no subsystem keeps a
+            stale default SMS app (which would hand that app implicit SMS access and defeat the permission checks below)."""
+            run.adb("shell", "cmd", "role", "add-role-holder", "--user", "0", "android.app.role.SMS", pkg, check=False)
+            run.adb("shell", "settings", "put", "secure", "sms_default_application", pkg, check=False)
+            for _ in range(10):
+                if sms_default() == pkg:
+                    return True
+                time.sleep(1)
+            return False
+
         check("before catching up, Call Tally is not the messaging app and Google's app is",
               sms_default() == "com.android.messaging", sms_default())
         # The feature's own screen is driven here: its explanation, Continue and Cancel, and that it has not caught up
@@ -1003,6 +1040,48 @@ def main():
         check("catching up changed nothing: Google's app is still the messaging app and the record is unchanged",
               sms_default() == "com.android.messaging" and rows(run.record()) == got,
               f"default {sms_default()} new {[r for r in rows(run.record()) if r not in got][:2]}")
+
+        # 0.9.2: the fix makes Continue read straight away when Call Tally is ALREADY the default messaging app, instead
+        # of re-requesting the role (the request is what Play Protect blocks on the owner's phone). The role dialogs still
+        # aren't drivable here, but the default itself can usually be set from adb, which lets this drive exactly that
+        # path: make Call Tally the default, confirm Telephony reports it, open Catch up, and tap Continue, which must
+        # read with no role dialog and not say REFUSED. The default is restored to Google's app afterwards so the later
+        # checks are unaffected. If neither adb mechanism can set the default on this AVD, the path is skipped.
+        run.sh("am", "force-stop", APP)
+        how = set_default_sms(APP)
+        if how:
+            check(f"Call Tally can be made the default messaging app from adb ({how})", sms_default() == APP, sms_default())
+            nodes = open_catch_up()
+            nodes = run.wait_for(lambda ns: (text_of(ns, "catch_result") or "").startswith("Call Tally is the messaging app"), 15)
+            run.shot("09b-catch-up-already-default")
+            check("already the default: the screen shows the ready line prompting Continue",
+                  (text_of(nodes, "catch_result") or "").startswith("Call Tally is the messaging app"),
+                  repr(text_of(nodes, "catch_result")))
+            run.tap(by_id(nodes, "catch_continue")[0])
+
+            def read_done(ns):
+                t = text_of(ns, "catch_result") or ""
+                return bool(t) and not t.startswith("Reading") and not t.startswith("Call Tally is the messaging app")
+            nodes = run.wait_for(read_done, 60)
+            line = text_of(nodes, "catch_result") or ""
+            first = line.split("\n")[0]
+            check("already the default: Continue reads with no role dialog, not REFUSED, and shows a count",
+                  REFUSED_LINE not in line and (first == "No new calls or texts." or first.endswith("added.")), repr(line))
+            check("already the default: nothing is lost by catching up, the record still matches",
+                  rows(run.record()) == got, f"new {[r for r in rows(run.record()) if r not in got][:2]}")
+            # Dismiss any hand-back dialog the read then raised (not drivable here).
+            run.sh("input", "keyevent", "KEYCODE_BACK")
+        else:
+            print("info  skipped: the role manager on this AVD would not make Call Tally the default messaging app, so "
+                  "the already-default read path is not exercised here (its logic is covered by the unit pieces and the "
+                  "code changes); verify on a real phone", flush=True)
+            check("already-default read path skipped on this AVD (see the info line above)", True)
+        # Always put the default back and reset both subsystems, since the attempts above can leave it changed: a stale
+        # default SMS app would keep implicit SMS access and defeat the permission checks that follow.
+        run.sh("am", "force-stop", APP)
+        restored = restore_default_sms(GOOGLE_SMS)
+        check("the default messaging app is restored to Google's app after the check",
+              restored and sms_default() == GOOGLE_SMS, sms_default())
 
         # The app's own version at the very bottom of Options, so the owner can confirm which build is installed.
         manifest = (ROOT / "android/app/AndroidManifest.template.xml").read_text()
