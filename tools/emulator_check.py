@@ -1024,6 +1024,11 @@ def main():
               bool(by_id(nodes, "catch_continue")) and bool(by_id(nodes, "catch_cancel"))
               and "only be read by the phone's messaging app" in (text_of(nodes, "catch_explain") or "")
               and (text_of(nodes, "catch_line") or "") == "Not yet", repr(text_of(nodes, "catch_explain")))
+        # 0.9.3: the screen shows what the phone reports about the messaging app, plainly, so the owner can screenshot it
+        # when the detection and Settings disagree. On the fresh emulator the default is Google's app (com.android.messaging).
+        catch_report = text_of(nodes, "catch_report") or ""
+        check("Catch up encrypted shows the 'Messaging app:' report line with the emulator's default messaging app",
+              catch_report.startswith("Messaging app:") and f"default={GOOGLE_SMS}" in catch_report, repr(catch_report))
         run.tap(by_id(nodes, "catch_cancel")[0])
         # Everything past Continue needs the Android system role dialogs: becoming the default messaging app, a text that
         # arrives while it holds the role being passed through to the inbox unread, handing the role back, and the

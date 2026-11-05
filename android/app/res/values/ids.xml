@@ -72,6 +72,7 @@
     <item type="id" name="catch_continue" />
     <item type="id" name="catch_cancel" />
     <item type="id" name="catch_result" />
+    <item type="id" name="catch_report" />
     <item type="id" name="catch_settings" />
     <item type="id" name="catch_holding" />
     <item type="id" name="catch_line" />

@@ -4,6 +4,7 @@ import android.app.role.RoleManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.provider.Settings;
 import android.provider.Telephony;
 
 /**
@@ -13,6 +14,7 @@ import android.provider.Telephony;
  */
 final class Roles {
     static final String GOOGLE_MESSAGES = "com.google.android.apps.messaging";
+    static final String SECURE_DEFAULT = "sms_default_application";
 
     private Roles() {}
 
@@ -25,9 +27,65 @@ final class Roles {
         }
     }
 
-    /** True while Call Tally is the phone's messaging app. */
+    /**
+     * True while Call Tally is the phone's messaging app. Three signals are tried in turn, and any one saying yes is
+     * enough, because on some phones (the owner's Samsung) Settings shows Call Tally as the SMS app but one signal still
+     * disagrees. Each is guarded on its own so a failing one can't throw: the canonical role check first, then the
+     * messaging-app package, then the secure setting Settings writes.
+     */
     static boolean holdsSmsRole(Context context) {
-        return context.getPackageName().equals(defaultMessaging(context));
+        String self = context.getPackageName();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                RoleManager roles = (RoleManager) context.getSystemService(Context.ROLE_SERVICE);
+                if (roles != null && roles.isRoleHeld(RoleManager.ROLE_SMS)) return true;
+            } catch (RuntimeException error) {
+                // Fall through to the other signals.
+            }
+        }
+        try {
+            if (self.equals(Telephony.Sms.getDefaultSmsPackage(context))) return true;
+        } catch (RuntimeException error) {
+            // Fall through to the secure setting.
+        }
+        try {
+            if (self.equals(Settings.Secure.getString(context.getContentResolver(), SECURE_DEFAULT))) return true;
+        } catch (RuntimeException error) {
+            // Nothing more to try.
+        }
+        return false;
+    }
+
+    /**
+     * A short line naming what each signal reports, for diagnosis, e.g. "role=held · default=com.calltally.app ·
+     * secure=com.calltally.app". Only package names and states, never personal data. Reads system state, so it is not
+     * pure, but it takes nothing and changes nothing.
+     */
+    static String report(Context context) {
+        String role = "n/a";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                RoleManager roles = (RoleManager) context.getSystemService(Context.ROLE_SERVICE);
+                role = (roles != null && roles.isRoleHeld(RoleManager.ROLE_SMS)) ? "held" : "not held";
+            } catch (RuntimeException error) {
+                role = "n/a";
+            }
+        }
+        return "role=" + role + " · default=" + packageOr(defaultMessaging(context)) + " · secure=" + packageOr(secureDefault(context));
+    }
+
+    /** The package the secure setting names as the messaging app, or null when it can't be read or is empty. */
+    private static String secureDefault(Context context) {
+        try {
+            String value = Settings.Secure.getString(context.getContentResolver(), SECURE_DEFAULT);
+            return (value == null || value.isEmpty()) ? null : value;
+        } catch (RuntimeException error) {
+            return null;
+        }
+    }
+
+    private static String packageOr(String value) {
+        return (value == null || value.isEmpty()) ? "none" : value;
     }
 
     /** The dialog that asks the owner to make Call Tally the messaging app for a moment. */

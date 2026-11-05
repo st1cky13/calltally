@@ -30,6 +30,7 @@ public class CatchUpActivity extends Screen {
     private TextView result;
     private TextView holding;
     private TextView last;
+    private TextView report;
     private Button go;
     private Button switchBack;
     private Button settings;
@@ -74,6 +75,15 @@ public class CatchUpActivity extends Screen {
         LinearLayout.LayoutParams lastGap = wide();
         lastGap.topMargin = dp(10);
         column.addView(last, lastGap);
+
+        // What the phone reports about the messaging app, plainly, so the owner can screenshot it when the detection and
+        // Settings disagree. Small and muted, below "Last caught up"; set fresh whenever the screen is shown.
+        report = text("", 13, muted, false);
+        report.setId(R.id.catch_report);
+        report.setLineSpacing(0, 1.15f);
+        LinearLayout.LayoutParams reportGap = wide();
+        reportGap.topMargin = dp(6);
+        column.addView(report, reportGap);
 
         holding = problemBox();
         holding.setId(R.id.catch_holding);
@@ -131,6 +141,7 @@ public class CatchUpActivity extends Screen {
         holding.setVisibility(holds ? View.VISIBLE : View.GONE);
         switchBack.setVisibility(holds ? View.VISIBLE : View.GONE);
         last.setText(Passthrough.lastCaughtUp(Sync.preferences(this).getLong("caught_up_at", 0), Locale.US));
+        report.setText("Messaging app: " + Roles.report(this));
         // Already the messaging app (set here or in Settings): there is nothing to request, so hide the Settings button
         // and tell the owner the next Continue reads. Never read on its own: it waits for a Continue tap.
         if (holds) {
@@ -170,8 +181,10 @@ public class CatchUpActivity extends Screen {
             if (Roles.holdsSmsRole(this)) {
                 readThenHandBack();
             } else {
-                // The request was blocked or declined. Offer the Settings route, which works where the request doesn't.
-                result.setText(Passthrough.REFUSED + " You can set Call Tally as the messaging app in Settings.");
+                // The request was blocked or declined. Offer the Settings route, which works where the request doesn't,
+                // and show what the phone reports on its own line, so the owner can screenshot it for diagnosis.
+                result.setText(Passthrough.REFUSED + " You can set Call Tally as the messaging app in Settings."
+                    + "\nMessaging app: " + Roles.report(this));
                 settings.setVisibility(View.VISIBLE);
             }
         } else if (code == HAND_BACK || code == SWITCH_BACK) {
