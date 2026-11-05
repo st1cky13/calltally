@@ -104,7 +104,8 @@ public class PhoneCheckActivity extends Screen {
                     got = gather(context);
                 } catch (SecurityException error) {
                     got = Collections.singletonList(new PhoneCheck.Line(PhoneCheck.Line.NOTE, Sync.NOT_ALLOWED));
-                } catch (RuntimeException error) {
+                } catch (Throwable error) {
+                    // Anything at all, so the screen never stays on its first line with Share off.
                     got = Collections.singletonList(new PhoneCheck.Line(PhoneCheck.Line.NOTE,
                         "Something went wrong: " + error.getClass().getSimpleName()));
                 }
@@ -156,14 +157,18 @@ public class PhoneCheckActivity extends Screen {
         String extra = "";
     }
 
-    /** What one message table gave: its row count, rows per chat, each chat's newest time and the newest rows. */
+    /**
+     * What one message table gave: its row count, rows per chat, each chat's newest time and, after finish(), the newest
+     * rows. appSorted: the phone wouldn't sort the table, so the app does.
+     */
     private static final class Table {
         int count;
         final Map<Long, Integer> perChat = new HashMap<>();
         final Map<Long, Long> newest = new HashMap<>();
-        final List<Message> rows = new ArrayList<>();
+        List<Message> rows = new ArrayList<>();
         // Picture and group rows only: message id and chat id, newest first, for the app's fallback list of people.
         final List<long[]> ids = new ArrayList<>();
+        boolean appSorted;
 
         void add(Message message) {
             count++;
@@ -171,8 +176,26 @@ public class PhoneCheckActivity extends Screen {
             perChat.put(message.thread, had == null ? 1 : had + 1);
             Long time = newest.get(message.thread);
             if (time == null || message.millis > time) newest.put(message.thread, message.millis);
-            if (rows.size() < NEWEST) rows.add(message);
+            rows.add(message);
         }
+
+        /** Newest first, then only the newest rows are kept. */
+        void finish(boolean pictures) {
+            if (appSorted) Collections.sort(rows, NEWEST_FIRST);
+            if (pictures) for (Message message : rows) ids.add(new long[] {message.id, message.thread});
+            rows = new ArrayList<>(rows.subList(0, Math.min(NEWEST, rows.size())));
+        }
+    }
+
+    private static final Comparator<Message> NEWEST_FIRST = new Comparator<Message>() {
+        @Override
+        public int compare(Message a, Message b) {
+            return a.millis != b.millis ? Long.compare(b.millis, a.millis) : Long.compare(b.id, a.id);
+        }
+    };
+
+    private static String problem(String what, RuntimeException error) {
+        return PhoneCheck.problem(what, error.getClass().getSimpleName(), error.getMessage());
     }
 
     static List<PhoneCheck.Line> gather(Context context) {
@@ -229,6 +252,7 @@ public class PhoneCheckActivity extends Screen {
         Map<String, String> addresses = new HashMap<>();
         Map<Long, String> recipientIds = new HashMap<>();
         int chats = -1;
+        String listProblem = null;
         try {
             try (Cursor cursor = open(resolver, CANONICAL, new String[] {"_id", "address"}, null)) {
                 while (cursor.moveToNext()) addresses.put(cursor.getString(0), cursor.getString(1));
@@ -240,6 +264,7 @@ public class PhoneCheckActivity extends Screen {
             chats = recipientIds.size();
         } catch (RuntimeException error) {
             if (error instanceof SecurityException) throw error;
+            listProblem = problem("The conversation list", error);
             listed.clear();
             addresses.clear();
             recipientIds.clear();
@@ -250,24 +275,30 @@ public class PhoneCheckActivity extends Screen {
         Table texts = new Table();
         try {
             readTexts(resolver, texts);
+            texts.finish(false);
         } catch (RuntimeException error) {
             if (error instanceof SecurityException) throw error;
             texts = null;
-            textProblem = "The text table couldn't be read.";
+            textProblem = problem("Text rows", error);
         }
         Table pictures = new Table();
         try {
             readPictures(resolver, pictures);
+            pictures.finish(true);
         } catch (RuntimeException error) {
             if (error instanceof SecurityException) throw error;
             pictures = null;
-            pictureProblem = "The picture and group table couldn't be read.";
+            pictureProblem = problem("Picture and group rows", error);
         }
         lines.add(row(PhoneCheck.countsLine(chats, texts == null ? -1 : texts.count, pictures == null ? -1 : pictures.count)));
         lines.add(row(PhoneCheck.listLine(readable)));
+        if (listProblem != null) lines.add(quiet(listProblem));
+        if (texts != null && texts.appSorted) lines.add(quiet("Text rows sorted by the app."));
+        if (pictures != null && pictures.appSorted) lines.add(quiet("Picture and group rows sorted by the app."));
         if (recordProblem != null) lines.add(quiet(recordProblem + " Nobody is shown as counting."));
         if (textProblem != null) lines.add(quiet(textProblem));
         if (pictureProblem != null) lines.add(quiet(pictureProblem));
+        lines.add(quiet(PhoneCheck.PEOPLE_NOTE));
 
         // Who is in each chat as the app sees it: the conversation list, else the addresses on a few of its messages.
         Map<Long, List<String>> threadPeople = new HashMap<>(listed);
@@ -329,12 +360,7 @@ public class PhoneCheckActivity extends Screen {
         List<Message> messages = new ArrayList<>();
         if (texts != null) messages.addAll(texts.rows);
         if (pictures != null) messages.addAll(pictures.rows);
-        Collections.sort(messages, new Comparator<Message>() {
-            @Override
-            public int compare(Message a, Message b) {
-                return a.millis != b.millis ? Long.compare(b.millis, a.millis) : Long.compare(b.id, a.id);
-            }
-        });
+        Collections.sort(messages, NEWEST_FIRST);
         lines.add(new PhoneCheck.Line(PhoneCheck.Line.HEADING, "Newest messages"));
         if (messages.isEmpty()) lines.add(quiet("No messages."));
         for (Message message : messages.subList(0, Math.min(NEWEST, messages.size()))) {
@@ -392,10 +418,21 @@ public class PhoneCheckActivity extends Screen {
         return index;
     }
 
+    /** Newest first from the phone, or, when the phone won't sort the table, as it comes for the app to sort. */
+    private static Cursor sorted(ContentResolver resolver, Uri uri, String[] columns, Table table) {
+        try {
+            return open(resolver, uri, columns, "date DESC");
+        } catch (RuntimeException error) {
+            if (error instanceof SecurityException) throw error;
+            table.appSorted = true;
+            return open(resolver, uri, columns, null);
+        }
+    }
+
     private static void readTexts(ContentResolver resolver, Table table) {
         List<String> columns = new ArrayList<>(java.util.Arrays.asList("_id", "thread_id", "address", "date", "type"));
         columns.addAll(present(resolver, SMS, "creator", "protocol", "sub_id"));
-        try (Cursor cursor = open(resolver, SMS, columns.toArray(new String[0]), "date DESC")) {
+        try (Cursor cursor = sorted(resolver, SMS, columns.toArray(new String[0]), table)) {
             int id = need(cursor, "_id"), thread = need(cursor, "thread_id"), address = need(cursor, "address");
             int date = need(cursor, "date"), type = need(cursor, "type");
             int creator = cursor.getColumnIndex("creator"), protocol = cursor.getColumnIndex("protocol"), sub = cursor.getColumnIndex("sub_id");
@@ -407,13 +444,11 @@ public class PhoneCheckActivity extends Screen {
                 message.address = cursor.getString(address);
                 message.millis = message.stored = cursor.getLong(date);
                 message.box = cursor.getInt(type);
-                if (table.rows.size() < NEWEST) {
-                    message.creator = creator >= 0 ? cursor.getString(creator) : null;
-                    List<String> extra = new ArrayList<>();
-                    if (protocol >= 0 && !cursor.isNull(protocol)) extra.add("protocol " + cursor.getString(protocol));
-                    if (sub >= 0 && !cursor.isNull(sub)) extra.add("sub_id " + cursor.getString(sub));
-                    message.extra = String.join(" · ", extra);
-                }
+                message.creator = creator >= 0 ? cursor.getString(creator) : null;
+                List<String> extra = new ArrayList<>();
+                if (protocol >= 0 && !cursor.isNull(protocol)) extra.add("protocol " + cursor.getString(protocol));
+                if (sub >= 0 && !cursor.isNull(sub)) extra.add("sub_id " + cursor.getString(sub));
+                message.extra = String.join(" · ", extra);
                 table.add(message);
             }
         }
@@ -422,7 +457,7 @@ public class PhoneCheckActivity extends Screen {
     private static void readPictures(ContentResolver resolver, Table table) {
         List<String> columns = new ArrayList<>(java.util.Arrays.asList("_id", "thread_id", "date", "msg_box"));
         columns.addAll(present(resolver, MMS, "m_type", "creator"));
-        try (Cursor cursor = open(resolver, MMS, columns.toArray(new String[0]), "date DESC")) {
+        try (Cursor cursor = sorted(resolver, MMS, columns.toArray(new String[0]), table)) {
             int id = need(cursor, "_id"), thread = need(cursor, "thread_id"), date = need(cursor, "date"), box = need(cursor, "msg_box");
             int type = cursor.getColumnIndex("m_type"), creator = cursor.getColumnIndex("creator");
             while (cursor.moveToNext()) {
@@ -433,8 +468,7 @@ public class PhoneCheckActivity extends Screen {
                 message.millis = Rules.toSeconds(message.stored, true) * 1000L;
                 message.box = cursor.getInt(box);
                 message.messageType = type >= 0 && !cursor.isNull(type) ? cursor.getInt(type) : -1;
-                if (table.rows.size() < NEWEST) message.creator = creator >= 0 ? cursor.getString(creator) : null;
-                table.ids.add(new long[] {message.id, message.thread});
+                message.creator = creator >= 0 ? cursor.getString(creator) : null;
                 table.add(message);
             }
         }

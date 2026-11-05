@@ -433,6 +433,8 @@ public class RulesCheck {
         Rules.Decision picture = texts.mms(1005, millis / 1000, 1, 132);
         System.out.println("phone-picture " + PhoneCheck.pictureRow(millis, 1, 132, 1005, "", 0, "com.google.android.apps.messaging",
             PhoneCheck.decision(picture, PhoneCheck.branch(false, Collections.<String>emptyList(), false, false), true), zone));
+        System.out.println("phone-problem " + PhoneCheck.problem("Text rows", "IllegalArgumentException", "Invalid column\n creator") + " | "
+            + PhoneCheck.problem("The conversation list", "NullPointerException", null));
         System.out.println("phone-other " + PhoneCheck.textRow(millis, 3, 1002, "5557776666", null, "",
             PhoneCheck.decision(texts.sms(1002, "5557776666", millis, 3), null, false), zone) + " | "
             + PhoneCheck.addresses(Arrays.asList("+15551234567", "insert-address-token"), Arrays.asList(137, 151)) + " | "

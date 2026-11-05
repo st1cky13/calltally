@@ -527,6 +527,8 @@ class AndroidRulesTests(ServerCase):
                          " · protocol 0 · counts under Dana-Work, by the row's address")
         self.assertEqual(rules["phone-picture"], "Oct 26, 5:45 AM · received · picture or group row [132] · chat 1005 · no addresses on the row"
                          " · creator com.google.android.apps.messaging · counts nothing: no people found, by the messages' addresses")
+        self.assertEqual(rules["phone-problem"], "Text rows couldn't be read: IllegalArgumentException, Invalid column creator"
+                         " | The conversation list couldn't be read: NullPointerException")
         self.assertEqual(rules["phone-other"].split(" | "), [
             "Oct 26, 5:45 AM · other [3] · text row · chat 1002 · address 5557776666 · creator unknown · skipped: not received or sent",
             "from +15551234567, to insert-address-token", "by the conversation list", "by the remembered filing", "null"])

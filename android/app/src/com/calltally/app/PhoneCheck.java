@@ -56,6 +56,14 @@ final class PhoneCheck {
             + (pictures < 0 ? "picture and group rows couldn't be read" : Words.plural(pictures, "picture and group row"));
     }
 
+    /** "Text rows couldn't be read: IllegalArgumentException, Invalid column creator", on one line. */
+    static String problem(String what, String className, String message) {
+        String detail = message == null ? "" : message.replaceAll("\\s+", " ").trim();
+        return what + " couldn't be read: " + className + (detail.isEmpty() ? "" : ", " + detail);
+    }
+
+    static final String PEOPLE_NOTE = "Decisions use the people as last read by a run.";
+
     static String listLine(boolean readable) {
         return "Conversation list: " + (readable ? "readable" : "not readable");
     }
