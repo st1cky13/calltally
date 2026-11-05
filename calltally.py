@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 4 * 1024 * 1024
 MAX_ENTRIES = 2000
@@ -27,6 +27,16 @@ DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 # Only a call that connected counts. Phones can log ringing time on a missed call, so its duration means nothing.
 CONNECTED = "(kind='call' AND direction IN ('in','out') AND duration_s>0)"
+
+# Lets a phone install the page with its own icon. No service worker, on purpose: this page is only ever live data.
+MANIFEST = {
+    "id": "/", "name": "Call Tally", "short_name": "Call Tally", "start_url": "/", "scope": "/",
+    "display": "standalone", "background_color": "#0f6b5c", "theme_color": "#0f6b5c",
+    "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+              {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+              {"src": "/static/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}],
+}
+ICONS = {"/static/icon-192.png", "/static/icon-512.png", "/static/icon-512-maskable.png"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries(
@@ -259,8 +269,8 @@ def make_handler(store):
             self.send_header("X-Frame-Options", "DENY")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; "
-                "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+                "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; "
+                "connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
             )
             self.end_headers()
             self.wfile.write(body)
@@ -282,6 +292,10 @@ def make_handler(store):
             try:
                 if url.path == "/":
                     self.send_file("calltally.html", "text/html; charset=utf-8")
+                elif url.path == "/manifest.webmanifest":
+                    self.send_bytes(200, json.dumps(MANIFEST).encode(), "application/manifest+json")
+                elif url.path in ICONS:
+                    self.send_file(url.path.lstrip("/"), "image/png")
                 elif url.path == "/api/range":
                     self.send_json(200, store.range(query.get("from", [""])[0], query.get("to", [""])[0]))
                 elif url.path == "/api/day":

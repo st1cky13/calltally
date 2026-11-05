@@ -197,6 +197,30 @@ class StoreTests(ServerCase):
         self.assertEqual(sqlite3.connect(target).execute("SELECT COUNT(*) FROM entries").fetchone()[0], 1)
         self.assertEqual(len(list(folder.glob("calltally-*.db"))), calltally.BACKUPS_KEPT)
 
+    def test_app_install_files_are_served(self):
+        with urllib.request.urlopen(self.base + "/manifest.webmanifest") as reply:
+            self.assertEqual(reply.headers.get_content_type(), "application/manifest+json")
+            manifest = json.load(reply)
+        self.assertEqual((manifest["name"], manifest["display"], manifest["start_url"]), ("Call Tally", "standalone", "/"))
+        sizes = {icon["sizes"] for icon in manifest["icons"]}
+        self.assertEqual(sizes, {"192x192", "512x512"})
+        self.assertIn("maskable", {icon["purpose"] for icon in manifest["icons"]})
+        for icon in manifest["icons"]:
+            with urllib.request.urlopen(self.base + icon["src"]) as reply:
+                self.assertEqual(reply.headers.get_content_type(), "image/png")
+                self.assertEqual(reply.read(8), b"\x89PNG\r\n\x1a\n")
+        with urllib.request.urlopen(self.base + "/") as reply:
+            policy = reply.headers["Content-Security-Policy"]
+        self.assertIn("manifest-src 'self'", policy)
+        self.assertIn("img-src 'self'", policy)
+
+    def test_only_the_icons_are_served_from_static(self):
+        for path in ("/static/../calltally.py", "/static/", "/static/icon.png", "/data/calltally.db"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(self.base + path)
+            self.assertEqual(caught.exception.code, 404, path)
+            caught.exception.close()
+
     def test_page_and_setup_are_served(self):
         with urllib.request.urlopen(self.base + "/") as reply:
             self.assertIn(b"Call Tally", reply.read())
