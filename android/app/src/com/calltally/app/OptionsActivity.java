@@ -14,6 +14,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
@@ -31,6 +32,7 @@ public class OptionsActivity extends Screen {
     private static final String[] MODE_NAMES = {"System", "Light", "Dark"};
 
     private LinearLayout column;
+    private ScrollView scroll;
     private TextView whoLine;
     private TextView payLine;
     private Button payChange;
@@ -505,10 +507,44 @@ public class OptionsActivity extends Screen {
             }
         }
 
-        ScrollView scroll = new ScrollView(this);
+        scroll = new ScrollView(this);
         scroll.addView(column);
         frame("Options", scroll, true);
         drawLook();
+
+        // Redrawn for a new look, or after Android let the screen go: back to the same place in the list, so a tap on a
+        // mode or theme near the bottom does not jump the page to the top. The offset can only be set once the view is laid
+        // out, and the list only reaches its full height after the system-bar insets are in, so it is set again on each
+        // layout pass until it holds, then the listener steps aside.
+        Bundle state = saved != null ? saved : getIntent().getExtras();
+        final int y = state != null ? state.getInt("scrollY", 0) : 0;
+        if (y != 0) {
+            scroll.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                private int last = -1;
+
+                @Override
+                public void onGlobalLayout() {
+                    scroll.scrollTo(0, y);
+                    int now = scroll.getScrollY();
+                    // Reached the saved offset, or as far as the list now goes: no more to do.
+                    if (now == y || now == last) {
+                        scroll.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                    }
+                    last = now;
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putInt("scrollY", scroll.getScrollY());
+    }
+
+    @Override
+    void keep(Intent intent) {
+        intent.putExtra("scrollY", scroll.getScrollY());
     }
 
     /** One run away from the screen. Its end redraws the status through the saved run_done. */

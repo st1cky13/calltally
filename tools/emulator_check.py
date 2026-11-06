@@ -1059,6 +1059,30 @@ def main():
               (version_text or "").startswith("Call Tally ") and app_version in (version_text or ""),
               f"{version_text!r} want version {app_version!r}")
 
+        # 1.0.0: changing the look recreates the screen; Options must keep its place rather than jump to the top. Scrolled
+        # to the bottom, tap a theme pill there, wait for the screen to come back in the new theme (the pill shows as
+        # chosen), and check the version line at the very bottom is still on screen, so the scroll was not reset.
+        pills = ("theme_teal", "theme_blue", "theme_plum", "theme_amber", "theme_slate")
+        on_screen = {name: by_id(nodes, name) for name in pills}
+        chosen_now = next((name for name in pills if on_screen[name] and on_screen[name][0].get("selected") == "true"), None)
+        target = "theme_blue" if chosen_now != "theme_blue" else "theme_plum"
+        if on_screen[target] and by_id(nodes, "version_line"):
+            run.tap(on_screen[target][0])
+            nodes = run.wait_for(lambda n: [x.get("selected") for x in by_id(n, target)] == ["true"], 15)
+            run.shot("15-options-scrolled")
+            check("changing the look keeps Options in place: the version line is still on screen after the screen comes back",
+                  bool(by_id(nodes, "version_line")) and [x.get("selected") for x in by_id(nodes, target)] == ["true"],
+                  f"version_line on screen={bool(by_id(nodes, 'version_line'))}, {target} chosen="
+                  f"{[x.get('selected') for x in by_id(nodes, target)]}")
+            # Put the theme back to teal so the look matches what the later checks expect.
+            if [x.get("selected") for x in by_id(nodes, "theme_teal")] != ["true"] and by_id(nodes, "theme_teal"):
+                run.tap(by_id(nodes, "theme_teal")[0])
+                run.wait_for(lambda n: [x.get("selected") for x in by_id(n, "theme_teal")] == ["true"], 15)
+        else:
+            check("changing the look keeps Options in place: the theme pills and version line are on screen at the bottom",
+                  False, f"target {target!r} on screen={bool(on_screen[target])}, "
+                  f"version_line on screen={bool(by_id(nodes, 'version_line'))}")
+
         # Run 2: Dana unticked, and a new call from her. Nothing goes and nothing of hers comes in.
         answer = run.tick([DANA1], untick=True)
         check("Dana unticked through the test hook", answer == "unticked 1", answer)
