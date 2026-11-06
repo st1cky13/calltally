@@ -1,5 +1,25 @@
+# Python
 __pycache__/
-data/
 *.pyc
+
+# Local data / databases (never in the repo)
+data/
 *.db
 *.db-*
+
+# Build output and signing material (live outside the repo; never commit)
+*.apk
+*.keystore
+*.jks
+*.pass
+out/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+.vscode/

@@ -1,4 +1,4 @@
-# calltally
+# Call Tally
 
 Call Tally is an Android app that shows your time on calls and your texts with the people you choose, by month, by pay
 period and for all time. It keeps its own record on the phone. Nothing leaves the phone: there is no account and
@@ -10,6 +10,11 @@ totals and the pay period's, below it the totals for all time: call time, calls 
 person. Tap a day to see its calls and texts on two tabs, and ignore any entry that shouldn't count. Ignored entries
 stay ignored and can be restored. The gear opens Options: Contacts, the pay period start, hiding ignored entries, and
 System, Light or Dark with five colour themes.
+
+## Download
+
+The signed app is at https://retiredrobot.com/calltally/ — download `calltally.apk` to your phone and open it. Installing
+and updating are covered below.
 
 ## The first start
 
@@ -88,3 +93,10 @@ calls and texts, goes through the first start, and checks the record the app kee
 fail line for each thing it checks, takes several minutes, and stops the emulator when it is done.
 
 These records are a personal aid and may be incomplete. Check them before relying on them for pay or billing.
+
+## License
+
+Call Tally is free software, released under the GNU General Public License, version 3. See the LICENSE file for the full
+text.
+
+Copyright (C) 2026 st1cky13
