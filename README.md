@@ -75,8 +75,9 @@ can only be installed by uninstalling the old app first, which erases the record
 2. To update, install the new file over the app already there. The record stays.
 3. Open Call Tally and follow the first start. If Android won't offer a permission, open App info for Call Tally, tap the
    three-dot menu, choose "Allow restricted settings", then allow it under Permissions.
-4. For runs in the background, set the app's battery use to unrestricted and turn off "remove permissions if app is
-   unused".
+4. So the app keeps counting in the background, set its battery use to unrestricted: open the phone's Settings, go to
+   Apps, then Call Tally, then Battery, and choose Unrestricted. On that same App info page, turn off "Remove permissions
+   if app is unused" or "Pause app activity if unused". The names vary a little by phone.
 
 The app reads the phone shortly after a call or text, about every 15 minutes, and whenever it is opened. The header shows
 when it last did.
