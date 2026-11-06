@@ -515,22 +515,24 @@ public class OptionsActivity extends Screen {
         // Redrawn for a new look, or after Android let the screen go: back to the same place in the list, so a tap on a
         // mode or theme near the bottom does not jump the page to the top. The offset can only be set once the view is laid
         // out, and the list only reaches its full height after the system-bar insets are in, so it is set again on each
-        // layout pass until it holds, then the listener steps aside.
+        // layout pass and re-applies until the page stops growing or the offset is reached, then the listener steps aside.
         Bundle state = saved != null ? saved : getIntent().getExtras();
         final int y = state != null ? state.getInt("scrollY", 0) : 0;
         if (y != 0) {
             scroll.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-                private int last = -1;
+                private int range = -1;
+                private int passes;
 
                 @Override
                 public void onGlobalLayout() {
                     scroll.scrollTo(0, y);
-                    int now = scroll.getScrollY();
-                    // Reached the saved offset, or as far as the list now goes: no more to do.
-                    if (now == y || now == last) {
+                    int grown = scroll.getChildCount() > 0 ? scroll.getChildAt(0).getHeight() : 0;
+                    // Stop once the offset is reached, or the page has stopped growing (so a shorter page's clamp is final),
+                    // or after a hard cap of passes so it always ends. Once detached it never re-attaches.
+                    if (scroll.getScrollY() == y || grown <= range || ++passes >= 12) {
                         scroll.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                     }
-                    last = now;
+                    range = grown;
                 }
             });
         }
