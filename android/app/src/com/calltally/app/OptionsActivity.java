@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -550,6 +551,12 @@ public class OptionsActivity extends Screen {
         LinearLayout.LayoutParams versionGap = wide();
         versionGap.topMargin = dp(24);
         column.addView(version, versionGap);
+        // How to reach the author and where the app lives, under the version: two centred lines in the link colour that
+        // open the mail app and the download page.
+        LinearLayout.LayoutParams emailGap = wide();
+        emailGap.topMargin = dp(6);
+        column.addView(footerLink("retiredrobot@retiredrobot.com", R.id.contact_email, "mailto:retiredrobot@retiredrobot.com"), emailGap);
+        column.addView(footerLink("retiredrobot.com/calltally", R.id.site_link, "https://retiredrobot.com/calltally/"), wide());
         // A line set to 13sp is a note, not a value: muted, as before.
         for (TextView line : lines) {
             if (line.getTextSize() == TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13, getResources().getDisplayMetrics()) && line.getCurrentTextColor() == txt) {
@@ -800,6 +807,29 @@ public class OptionsActivity extends Screen {
         } catch (Exception error) {
             return "Call Tally";
         }
+    }
+
+    /** A centred line in the link colour that opens the given address: mailto: in the mail app, https in the browser. */
+    private TextView footerLink(String words, int id, final String address) {
+        TextView view = text(words, 13, accent, false);
+        view.setId(id);
+        view.setGravity(Gravity.CENTER);
+        view.setMinHeight(dp(40));
+        view.setMinimumHeight(dp(40));
+        view.setBackground(touchable(null, 8));
+        view.setClickable(true);
+        view.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String action = address.startsWith("mailto:") ? Intent.ACTION_SENDTO : Intent.ACTION_VIEW;
+                try {
+                    startActivity(new Intent(action, Uri.parse(address)));
+                } catch (RuntimeException error) {
+                    // No app on the phone to open it: nothing to do.
+                }
+            }
+        });
+        return view;
     }
 
     private TextView sub(String value) {

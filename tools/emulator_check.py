@@ -1055,7 +1055,9 @@ def main():
         # The app's own version at the very bottom of Options, so the owner can confirm which build is installed.
         manifest = (ROOT / "android/app/AndroidManifest.template.xml").read_text()
         app_version = manifest.split('android:versionName="')[1].split('"')[0]
-        nodes = open_options("version_line")
+        # Scroll to the last element (since 1.0.2 the footer sits below the version), so the end of the list clamps the
+        # final swipe and the version line lands fully on screen, as it did when it was last.
+        nodes = open_options("site_link")
         version_text = text_of(nodes, "version_line")
         check("Options shows the app version at the bottom",
               (version_text or "").startswith("Call Tally ") and app_version in (version_text or ""),
@@ -1098,6 +1100,16 @@ def main():
             check("changing the look keeps Options in place: the theme pills and version line are on screen at the bottom",
                   False, f"target {target!r} on screen={bool(on_screen[target])}, "
                   f"version_line within screen={version_within_screen(nodes)}")
+
+        # 1.0.2: the author's email and the download site sit under the version at the very bottom, both on screen.
+        nodes = open_options("site_link")
+        site = by_id(nodes, "site_link")
+        site_bottom = bounds(site[0])[1][1] if site else screen_height + 1
+        check("Options ends with the author's email and the download site under the version",
+              text_of(nodes, "contact_email") == "retiredrobot@retiredrobot.com"
+              and text_of(nodes, "site_link") == "retiredrobot.com/calltally"
+              and bool(by_id(nodes, "version_line")) and site_bottom <= screen_height,
+              f"email={text_of(nodes, 'contact_email')!r} site={text_of(nodes, 'site_link')!r} bottom={site_bottom} screen={screen_height}")
 
         # 1.0.1: forgetting the learned own number. Run 1 learned the phone's own number (checked above), so the Contacts
         # section shows a forget row. Tapping Forget clears it from the record: the line then reads "Forgotten." and the

@@ -82,6 +82,8 @@
     <item type="id" name="still_default" />
     <item type="id" name="switch_back" />
     <item type="id" name="version_line" />
+    <item type="id" name="contact_email" />
+    <item type="id" name="site_link" />
     <item type="id" name="text_time_line" />
     <item type="id" name="text_time_change" />
     <item type="id" name="text_time_value" />
