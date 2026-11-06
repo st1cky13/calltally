@@ -936,6 +936,8 @@ def main():
             ns = open_options("catch_up")
             if not by_id(ns, "catch_up"):
                 raise RuntimeError("the Catch up encrypted button wasn't found in Options")
+            # Options scrolled to the Catch up section, for the muted-description colour check in the shot.
+            run.shot("09b-options-catch")
             run.tap(by_id(ns, "catch_up")[0])
             return run.wait_for(lambda n2: bool(by_id(n2, "catch_continue")), 30)
 
@@ -1096,6 +1098,26 @@ def main():
             check("changing the look keeps Options in place: the theme pills and version line are on screen at the bottom",
                   False, f"target {target!r} on screen={bool(on_screen[target])}, "
                   f"version_line within screen={version_within_screen(nodes)}")
+
+        # 1.0.1: forgetting the learned own number. Run 1 learned the phone's own number (checked above), so the Contacts
+        # section shows a forget row. Tapping Forget clears it from the record: the line then reads "Forgotten." and the
+        # button goes. That state is reached only after the clear succeeds, so it is the proof here. The record is read
+        # from the UI, not the file, on purpose: a background read on open can re-learn the still-valid number at any
+        # moment (by design — Forget drops a stale number, a current one comes back), so a file check for an empty value
+        # would race. The row is left out when nothing is learned, which the visibility rule in load() handles.
+        nodes = open_options("own_forget")
+        run.shot("16-options-forget")
+        own_before = dict(sqlite3.connect(f"file:{run.record() / DATABASE}?mode=ro", uri=True).execute("SELECT key,value FROM settings").fetchall())
+        check("the Contacts forget row shows while an own number is learned",
+              bool(by_id(nodes, "own_forget")) and (text_of(nodes, "own_line") or "").startswith("Your own number was learned")
+              and own_before.get("own_numbers") == reference.number_key(OWN),
+              f"forget={bool(by_id(nodes, 'own_forget'))} line={text_of(nodes, 'own_line')!r} own={own_before.get('own_numbers')!r}")
+        run.tap(by_id(nodes, "own_forget")[0])
+        nodes = run.wait_for(lambda n2: (text_of(n2, "own_line") or "") == "Forgotten." and not by_id(n2, "own_forget"), 15)
+        run.shot("16b-options-forgotten")
+        check("Forget clears the learned own number: the line reads Forgotten and the button goes",
+              (text_of(nodes, "own_line") or "") == "Forgotten." and not by_id(nodes, "own_forget"),
+              f"forget={bool(by_id(nodes, 'own_forget'))} line={text_of(nodes, 'own_line')!r}")
 
         # Run 2: Dana unticked, and a new call from her. Nothing goes and nothing of hers comes in.
         answer = run.tick([DANA1], untick=True)

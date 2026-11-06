@@ -34,6 +34,9 @@ public class OptionsActivity extends Screen {
     private LinearLayout column;
     private ScrollView scroll;
     private TextView whoLine;
+    private TextView ownLine;
+    private Button ownForget;
+    private LinearLayout ownRow;
     private TextView payLine;
     private Button payChange;
     private CheckBox hide;
@@ -82,6 +85,50 @@ public class OptionsActivity extends Screen {
         });
         whoLine.setId(R.id.who_line);
         pair(whoLine, whoOpen);
+
+        // Your own number is learned from your sent messages, to leave it out of group counts. Forget clears what was
+        // learned, so a stale or wrong number is dropped; your current number is learned again on the next run. The row
+        // is shown only when there is something learned to forget.
+        ownLine = muted("Your own number was learned from your sent messages.");
+        ownLine.setId(R.id.own_line);
+        ownLine.setTextSize(13);
+        ownForget = button("Forget");
+        ownForget.setId(R.id.own_forget);
+        ownForget.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                enable(ownForget, false);
+                final Context context = getApplicationContext();
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        boolean done;
+                        try {
+                            Record.get(context).clearSetting(Record.OWN_NUMBERS);
+                            done = true;
+                        } catch (RuntimeException error) {
+                            done = false;
+                        }
+                        final boolean cleared = done;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isDestroyed()) return;
+                                if (cleared) {
+                                    ownLine.setText("Forgotten.");
+                                    ownForget.setVisibility(View.GONE);
+                                } else {
+                                    ownLine.setText("Couldn't forget.");
+                                    enable(ownForget, true);
+                                }
+                            }
+                        });
+                    }
+                }).start();
+            }
+        });
+        ownRow = pair(ownLine, ownForget);
+        ownRow.setVisibility(View.GONE);
 
         heading("Pay period");
         payLine = muted("");
@@ -375,7 +422,10 @@ public class OptionsActivity extends Screen {
         column.addView(runNow, flushStart(runNow));
 
         heading("Catch up encrypted");
+        // A description of what the button does, so it reads in the muted note colour like the app's other help text,
+        // not the body colour the paired value lines use.
         TextView catchInfo = muted("Read encrypted chats the phone only shows its messaging app.");
+        catchInfo.setTextColor(muted);
         Button catchOpen = button("Catch up encrypted");
         catchOpen.setId(R.id.catch_up);
         catchOpen.setOnClickListener(new View.OnClickListener() {
@@ -600,7 +650,7 @@ public class OptionsActivity extends Screen {
             @Override
             public void run() {
                 String who, pay, problem = null;
-                boolean hidden = false, havePeriod = false;
+                boolean hidden = false, havePeriod = false, haveOwn = false;
                 boolean holds = Roles.holdsSmsRole(context);
                 String caughtUp = Passthrough.lastCaughtUp(Sync.preferences(context).getLong("caught_up_at", 0), Locale.US);
                 try {
@@ -612,19 +662,28 @@ public class OptionsActivity extends Screen {
                     havePeriod = period != null;
                     pay = period == null ? "No pay period is set." : period.describe(LocalDate.now());
                     hidden = "1".equals(record.setting("hide_ignored"));
+                    haveOwn = !record.ownNumbers().isEmpty();
                 } catch (Record.TooNew error) {
                     who = pay = problem = error.getMessage();
                 } catch (RuntimeException error) {
                     who = pay = problem = Record.UNREADABLE;
                 }
                 final String whoText = who, payText = pay, trouble = problem;
-                final boolean hideIt = hidden, set = havePeriod, holdsRole = holds;
+                final boolean hideIt = hidden, set = havePeriod, holdsRole = holds, showOwn = haveOwn;
                 final String caughtUpText = caughtUp;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         if (isDestroyed()) return;
                         whoLine.setText(whoText);
+                        // The own-number row shows only when there is something learned to forget. Back to its normal
+                        // words and an on button when shown, so a re-learned number after a Forget reads afresh.
+                        if (showOwn) {
+                            ownLine.setText("Your own number was learned from your sent messages.");
+                            ownForget.setVisibility(View.VISIBLE);
+                            enable(ownForget, true);
+                        }
+                        ownRow.setVisibility(showOwn ? View.VISIBLE : View.GONE);
                         payLine.setText(payText);
                         payChange.setText(set ? "Change" : "Set");
                         hide.setOnCheckedChangeListener(null);
@@ -749,8 +808,8 @@ public class OptionsActivity extends Screen {
         return view;
     }
 
-    /** Words on the left, a quiet button on the right, its word lined up with the right edge. */
-    private void pair(TextView words, Button button) {
+    /** Words on the left, a quiet button on the right, its word lined up with the right edge. Returns the row. */
+    private LinearLayout pair(TextView words, Button button) {
         quiet(button);
         // Quiet dims further when off, so the dimming is set again in its new look.
         enable(button, button.isEnabled());
@@ -765,6 +824,7 @@ public class OptionsActivity extends Screen {
         side.setMarginEnd(-hang());
         row.addView(button, side);
         column.addView(row, wide());
+        return row;
     }
 
     /** How far a quiet button's padding hangs past the text edge: never past the screen edge on narrow phones. */
