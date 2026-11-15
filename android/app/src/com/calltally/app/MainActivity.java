@@ -4,6 +4,11 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Canvas;
+import android.graphics.CornerPathEffect;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -88,6 +93,15 @@ public class MainActivity extends Screen {
     private LinearLayout grid;
     private Button allRow;
     private final Map<String, LinearLayout> cells = new java.util.HashMap<>();
+    /** The calendar's week rows, top to bottom, and the empty cells before the month's first day. */
+    private final java.util.List<LinearLayout> weeks = new java.util.ArrayList<>();
+    private int blanks;
+    /** The pay period the calendar marks: the one on the card, which changes only when the record answers. */
+    private long markedK;
+    /** The shown period's days on this page as week row, first column and last column, and their outline in the grid. */
+    private final java.util.List<int[]> spans = new java.util.ArrayList<>();
+    private final Path outline = new Path();
+    private Paint outlinePaint;
     private String permissionText;
     private Dialog picker;
     private int pickYear;
@@ -307,6 +321,13 @@ public class MainActivity extends Screen {
         grid.setId(R.id.grid);
         grid.setOrientation(LinearLayout.VERTICAL);
         monthCard.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        // The pay period's outline follows the days wherever a layout puts them.
+        grid.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int l, int t, int r, int b, int oldL, int oldT, int oldR, int oldB) {
+                drawOutline();
+            }
+        });
 
         allRow = totalRow(R.id.total_all);
         monthCard.addView(allRow, rowGap);
@@ -409,6 +430,18 @@ public class MainActivity extends Screen {
 
         SwipeCard() {
             super(MainActivity.this);
+        }
+
+        /** The pay period's outline goes first, beneath the days, and may reach a few dp past the grid into the gaps. */
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            if (!outline.isEmpty() && grid != null) {
+                canvas.save();
+                canvas.translate(grid.getLeft(), grid.getTop());
+                canvas.drawPath(outline, outlinePaint);
+                canvas.restore();
+            }
+            super.dispatchDraw(canvas);
         }
 
         @Override
@@ -612,10 +645,11 @@ public class MainActivity extends Screen {
         title.setContentDescription(shown + ". Pick a month");
         grid.removeAllViews();
         cells.clear();
-        int lead = view.atDay(1).getDayOfWeek().getValue() % 7;
+        weeks.clear();
+        blanks = view.atDay(1).getDayOfWeek().getValue() % 7;
         int count = view.lengthOfMonth();
-        int rows = (lead + count + 6) / 7;
-        int day = 1 - lead;
+        int rows = (blanks + count + 6) / 7;
+        int day = 1 - blanks;
         // A short phone gets lower rows, so the whole month and All time fit without scrolling; a busy day's three lines
         // still fit the lower row through their negative margins. A larger font size makes the rows taller with it, so
         // the screen scrolls rather than cut the lines off.
@@ -642,8 +676,86 @@ public class MainActivity extends Screen {
                 row.addView(cell, cellParams);
             }
             grid.addView(row, rowParams);
+            weeks.add(row);
         }
+        markPeriod();
         drawNav();
+    }
+
+    /** A day in the pay period shown on the card. */
+    private boolean inPeriod(LocalDate date) {
+        return period != null && !date.isBefore(period.first(markedK)) && !date.isAfter(period.last(markedK));
+    }
+
+    /**
+     * Marks the shown pay period's days on the calendar: one outline around those on this page, and the words for each
+     * day. With no pay period set, there are none.
+     */
+    private void markPeriod() {
+        int count = view.lengthOfMonth();
+        spans.clear();
+        for (int r = 0; r < weeks.size(); r++) {
+            int from = -1, to = -1;
+            for (int c = 0; c < 7; c++) {
+                int day = 1 - blanks + r * 7 + c;
+                if (day < 1 || day > count || !inPeriod(view.atDay(day))) continue;
+                if (from < 0) from = c;
+                to = c;
+            }
+            if (from >= 0) spans.add(new int[] {r, from, to});
+        }
+        drawOutline();
+        for (Map.Entry<String, LinearLayout> cell : cells.entrySet()) {
+            describe(cell.getValue(), LocalDate.parse(cell.getKey()));
+        }
+    }
+
+    /** A day's words from fill, and whether it is in the pay period shown. */
+    private void describe(LinearLayout cell, LocalDate date) {
+        Object words = cell.getTag();
+        if (words == null) return;
+        cell.setContentDescription(inPeriod(date) ? words + ", in the pay period" : words.toString());
+    }
+
+    /**
+     * Builds the outline from the laid-out cells: each row's run of days as a rectangle, joined into one shape with
+     * rounded corners. The sides sit on the outer edges of the end days; the top and bottom sit in the gaps between rows,
+     * clear of today's circle, and past the grid's top and bottom into the space beside it.
+     */
+    private void drawOutline() {
+        outline.reset();
+        if (outlinePaint == null) {
+            outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            outlinePaint.setStyle(Paint.Style.STROKE);
+            outlinePaint.setStrokeWidth(1.5f * getResources().getDisplayMetrics().density);
+            outlinePaint.setColor(accent);
+            outlinePaint.setPathEffect(new CornerPathEffect(dp(10)));
+        }
+        float half = outlinePaint.getStrokeWidth() / 2f;
+        float gap = dp(narrow ? 2 : 4);
+        // About 2dp of air above a row's tops, today's circle included, as far as the gap allows; the rest goes below.
+        float above = Math.min(dp(2) + half, gap / 2 + dp(1));
+        float below = gap - above;
+        int[] before = null;
+        for (int[] run : spans) {
+            if (run[0] >= weeks.size()) continue;
+            // A pixel's overlap with the row above when they share columns, so the two join into one shape. A short
+            // period that wraps a week with no shared column is deliberately two outlines, one in each row's band.
+            boolean joins = before != null && run[0] == before[0] + 1 && run[1] <= before[2] && before[1] <= run[2];
+            before = run;
+            LinearLayout row = weeks.get(run[0]);
+            View first = row.getChildAt(run[1]), last = row.getChildAt(run[2]);
+            if (row.getWidth() == 0 || first == null || last == null) continue;
+            float top = row.getTop() - (run[0] == 0 ? dp(2) + half : above) - (joins ? 1 : 0);
+            float bottom = row.getBottom() + (run[0] == weeks.size() - 1 ? dp(2) + half : below);
+            Path part = new Path();
+            float left = row.getLeft() + first.getLeft() + half, right = row.getLeft() + last.getRight() - half;
+            part.addRect(new RectF(left, top, right, bottom), Path.Direction.CW);
+            // Should joining ever fail, the row is still outlined on its own.
+            if (!outline.op(part, Path.Op.UNION)) outline.addPath(part);
+        }
+        View card = (View) grid.getParent();
+        if (card != null) card.invalidate();
     }
 
     /** How far a two-digit day number starts inside its 22dp room: where the time, the texts and the weekdays start. */
@@ -750,7 +862,9 @@ public class MainActivity extends Screen {
         } else if (used && data.calls == 0) {
             words.append(data.unanswered > 0 ? ", calls not answered only" : ", ignored entries only");
         }
-        cell.setContentDescription(words);
+        // The words go on the cell for markPeriod, which adds the pay period whenever it changes.
+        cell.setTag(words.toString());
+        describe(cell, date);
     }
 
     private void drawNav() {
@@ -1023,6 +1137,8 @@ public class MainActivity extends Screen {
             if (found.followed) periodFollow = true;
             showRow(periodRow, period.label(periodK, today), found.periodTotals);
         }
+        markedK = periodK;
+        markPeriod();
         showRow(allRow, "All time", found.all);
         drawNav();
     }

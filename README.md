@@ -6,10 +6,10 @@ nothing is sent anywhere.
 
 It opens on the current month, with arrows to move between months and >> to come back to this month. Tap the month's
 name to pick any month. Each day shows its exact call time and the number of texts. Above the calendar are the month's
-totals and the pay period's, below it the totals for all time: call time, calls and texts. Tap a total to see it by
-person. Tap a day to see its calls and texts on two tabs, and ignore any entry that shouldn't count. Ignored entries
-stay ignored and can be restored. The gear opens Options: Contacts, the pay period start, hiding ignored entries, and
-System, Light or Dark with five colour themes.
+totals and the pay period's, below it the totals for all time: call time, calls and texts. The days of the pay period
+shown are outlined on the calendar. Tap a total to see it by person. Tap a day to see its calls and texts on
+two tabs, and ignore any entry that shouldn't count. Ignored entries stay ignored and can be restored. The gear opens
+Options: Contacts, the pay period start, hiding ignored entries, and System, Light or Dark with five colour themes.
 
 ## Download
 

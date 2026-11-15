@@ -400,6 +400,17 @@ def spaced(text):
     return text.replace("\u00a0", " ")
 
 
+def in_pay_period(nodes, month=None):
+    """The day numbers whose cells say they are in the pay period shown, of one month (its full name) or of any."""
+    days = []
+    for n in by_id(nodes, "day_cell"):
+        words = n.get("content-desc") or ""
+        name, _, number = words.split(",")[0].partition(" ")
+        if words.endswith(", in the pay period") and (month is None or name == month) and number.isdigit():
+            days.append(int(number))
+    return sorted(days)
+
+
 def boxes(ns):
     """The app's check boxes on screen, by the first line of their words (Who counts puts the numbers on the next line):
     "true" or "false"."""
@@ -840,6 +851,9 @@ def main():
               bool(by_id(nodes, "month_title")) and not by_id(nodes, "total_period")
               and "pay_period_start" not in settings and "pay_period_days" not in settings,
               f"{settings} period row {bool(by_id(nodes, 'total_period'))}")
+        # 1.0.3: with pay periods off, no day on the calendar is marked or says it is in a pay period.
+        check("with pay periods off, no day on the calendar says it is in the pay period",
+              bool(by_id(nodes, "day_cell")) and not in_pay_period(nodes), f"marked {in_pay_period(nodes)}")
         answer = run.pay("2026-10-25")
         check("pay period set again through the test hook for the checks below", answer == "pay period set", answer)
 
@@ -1317,6 +1331,38 @@ def main():
         cells = [n.get("content-desc") for n in by_id(nodes, "day_cell")]
         check("the seeded month's total and its busy day match the reference", words in cells
               and text_of(nodes, "total_month").endswith(row_value(seeded_totals)), f"{words!r} in {cells[20:30]}")
+        # 1.0.3: the days of the pay period on the card are marked on the calendar, and each day says so. The card first
+        # shows the period holding the emulator's date; its arrow brings back the Oct 25 – Nov 7 period, which stays on
+        # the card for the shots below until the app is stopped.
+        def period_shown(ns):
+            return (text_of(ns, "total_period") or "").split("\n")[0]
+
+        def period_back_to(ns, prefix):
+            for _ in range(40):
+                label = period_shown(ns)
+                arrow = by_id(ns, "period_prev")
+                if label.startswith(prefix) or not arrow or arrow[0].get("enabled") != "true":
+                    break
+                run.tap(arrow[0])
+                ns = run.wait_for(lambda n: period_shown(n) != label, 15)
+            return ns
+
+        nodes = period_back_to(nodes, "Pay period Oct 25")
+        check("with the pay period Oct 25 – Nov 7 shown, October 25 to 31 say they are in the pay period and the 24th does not",
+              period_shown(nodes).startswith("Pay period Oct 25") and in_pay_period(nodes, "October") == list(range(25, 32)),
+              f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+        if [n.get("enabled") for n in by_id(nodes, "period_next")] == ["true"]:
+            run.tap(by_id(nodes, "period_next")[0])
+            nodes = run.wait_for(lambda ns: period_shown(ns).startswith("Pay period Nov 8"), 15)
+            check("one pay period on, Nov 8 – Nov 21, no October day says it, the 25th included",
+                  period_shown(nodes).startswith("Pay period Nov 8") and in_pay_period(nodes, "October") == [],
+                  f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+            nodes = period_back_to(nodes, "Pay period Oct 25")
+            check("one pay period back again, October 25 to 31 say it again",
+                  period_shown(nodes).startswith("Pay period Oct 25") and in_pay_period(nodes, "October") == list(range(25, 32)),
+                  f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+        else:
+            print("info  skipped: stepping on from the Oct 25 pay period, as it holds the emulator's date")
         run.shot("10c-seeded-month")
         # 0.9.12: a sideways swipe on the calendar moves one month, within the arrows' limits: right for the month before,
         # left for the next. Each swipe runs across the grid from 20 to 80 percent of its width, starting on a day.
@@ -1485,8 +1531,48 @@ def main():
             check("a swipe left on the pay period line brings the current period back",
                   period_label(nodes) == current_label and text_of(nodes, "month_title") == month_shown,
                   f"{period_label(nodes)!r} want {current_label!r}")
+            # 1.0.3: on the seeded month, one pay period back moves the marked days to the period before, and one on
+            # brings them back: Oct 27 – Nov 9 marks the 27th to the 31st, Oct 13 – Oct 26 the 13th to the 26th.
+            nodes = period_back_to(back_to_seeded(nodes), "Pay period Oct 27")
+            later = (period_shown(nodes), in_pay_period(nodes, "October"))
+            if [n.get("enabled") for n in by_id(nodes, "period_prev")] == ["true"]:
+                run.tap(by_id(nodes, "period_prev")[0])
+                nodes = run.wait_for(lambda ns: period_shown(ns).startswith("Pay period Oct 13"), 15)
+            earlier = (period_shown(nodes), in_pay_period(nodes, "October"))
+            run.shot("10e-period-stepped")
+            check("one pay period back, the marked October days move from the 27th to 31st to the 13th to 26th",
+                  later[0].startswith("Pay period Oct 27") and later[1] == list(range(27, 32))
+                  and earlier[0].startswith("Pay period Oct 13") and earlier[1] == list(range(13, 27)), f"{later} then {earlier}")
+            if [n.get("enabled") for n in by_id(nodes, "period_next")] == ["true"]:
+                run.tap(by_id(nodes, "period_next")[0])
+                nodes = run.wait_for(lambda ns: period_shown(ns).startswith("Pay period Oct 27"), 15)
+            check("one pay period on again, the 27th to 31st are marked again and the 26th is not",
+                  period_shown(nodes).startswith("Pay period Oct 27") and in_pay_period(nodes, "October") == list(range(27, 32)),
+                  f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
         else:
             print(f"info  skipped: the pay period swipe checks, as no earlier period holds entries ({answer})")
+        # 1.0.3: a seven-day pay period from Wed Oct 21 to Tue Oct 27 wraps a week with no column in common, so it is
+        # outlined as two shapes, one in each row. It is picked in Options, then the Oct 25 start is set back below.
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "gear")), 15)
+        run.tap(by_id(nodes, "gear")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_change")), 30)
+        run.tap(by_id(nodes, "pay_change")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "cal_day")) and bool(by_id(ns, "period_preview")), 20)
+        wrap_first, wrap_last = date(2026, 10, 21), date(2026, 10, 27)
+        tap_day(nodes, wrap_first)
+        nodes = run.wait_for(lambda ns: text_of(ns, "period_preview") == "Now pick the last day.", 15)
+        tap_day(nodes, wrap_last)
+        nodes = run.wait_for(lambda ns: [n.get("enabled") for n in by_id(ns, "confirm")] == ["true"], 15)
+        if by_id(nodes, "confirm"):
+            run.tap(by_id(nodes, "confirm")[0])
+        nodes = run.wait_for(lambda ns: bool(by_id(ns, "pay_line")) and not by_id(ns, "confirm"), 20)
+        run.sh("input", "keyevent", "KEYCODE_BACK")
+        nodes = run.wait_for(lambda ns: (text_of(ns, "total_period") or "").startswith("Pay period "), 30)
+        nodes = period_back_to(back_to_seeded(nodes), "Pay period Oct 21")
+        run.shot("10f-period-wrapped")
+        check("a seven-day period from Wed Oct 21 to Tue Oct 27: those days say they are in the pay period, the 20th and 28th do not",
+              period_shown(nodes).startswith("Pay period Oct 21") and in_pay_period(nodes, "October") == list(range(21, 28)),
+              f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
         answer = run.pay("2026-10-25")
         check("pay period set back to the Oct 25 start through the test hook", answer == "pay period set", answer)
 
