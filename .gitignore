@@ -23,3 +23,7 @@ Thumbs.db
 .idea/
 *.iml
 .vscode/
+
+# Notes and working documents stay local; the README is the public front page.
+*.md
+!README.md
