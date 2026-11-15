@@ -15,7 +15,7 @@ import java.util.Set;
  * unless the build is also debuggable.
  *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --esa numbers 5551234567 [--ez untick true]
  * It also sets the pay period start, as the first start or Options would, for the checks that need one:
- *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --es pay_start 2026-10-25
+ *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --es pay_start 2026-10-25 [--es pay_days 28]
  * And it times reads of picture messages' address rows, as a run makes them, to size what a run costs:
  *   am broadcast -a com.calltally.app.TEST_TICK -n com.calltally.app/.TestHook --ei time_addr 200
  */
@@ -44,10 +44,13 @@ public class TestHook extends BroadcastReceiver {
                     }
                     String payStart = intent.getStringExtra("pay_start");
                     if (payStart != null) {
+                        String payDays = intent.getStringExtra("pay_days");
+                        if (payDays == null) payDays = "14";
                         if (PayPeriod.of(payStart, "14") == null) throw new IllegalArgumentException("pay_start");
+                        if (PayPeriod.of(payStart, payDays) == null) throw new IllegalArgumentException("pay_days");
                         Record record = Record.get(context);
                         record.setSetting("pay_period_start", payStart);
-                        record.setSetting("pay_period_days", "14");
+                        record.setSetting("pay_period_days", payDays);
                         result.setResult(1, "pay period set", null);
                         return;
                     }

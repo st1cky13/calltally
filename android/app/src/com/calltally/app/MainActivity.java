@@ -1,15 +1,21 @@
 package com.calltally.app;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
+import android.app.ActivityOptions;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
@@ -29,6 +35,8 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.animation.Interpolator;
+import android.view.animation.PathInterpolator;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -36,6 +44,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 /**
@@ -55,6 +64,9 @@ public class MainActivity extends Screen {
     // Tiles and buttons; the totals rows and the pay period line.
     private static final int CORNER = 8;
     private static final int CORNER_CARD = 12;
+    /** How anything arriving eases in, and how a month leaving eases out. No overshoot anywhere. */
+    private static final Interpolator ARRIVE = new PathInterpolator(0.16f, 1f, 0.3f, 1f);
+    private static final Interpolator LEAVE = new PathInterpolator(0.4f, 0f, 1f, 1f);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean asked;
     private boolean narrow;
@@ -98,10 +110,58 @@ public class MainActivity extends Screen {
     private int blanks;
     /** The pay period the calendar marks: the one on the card, which changes only when the record answers. */
     private long markedK;
+    /** Whether markedK is the card's period yet: not on a page the calendar turned to until the record answers. */
+    private boolean markedKnown;
+    /** The month the outline was last drawn on. */
+    private YearMonth outlineMonth;
     /** The shown period's days on this page as week row, first column and last column, and their outline in the grid. */
     private final java.util.List<int[]> spans = new java.util.ArrayList<>();
     private final Path outline = new Path();
     private Paint outlinePaint;
+    /**
+     * The outline's motion. A glide moves the shape of the period glideFirst to glideLast by glideOffset pixels, drawn
+     * only where it meets this month's days; a fade shows the old outline going out, then the new one coming in.
+     */
+    private static final int STILL = 0, GLIDE = 1, FADE_OUT = 2, FADE_IN = 3;
+    private int outlinePhase = STILL;
+    private ValueAnimator outlineMove;
+    private LocalDate glideFirst;
+    private LocalDate glideLast;
+    private float glideOffset;
+    /**
+     * A glide's geometry, built when it starts and on each layout: this month's own region, and the target period's
+     * parts (runs of rows that join) where they lie at offset 0. Each frame moves the parts into the reused paths below,
+     * clips them to the region, and fades each by how much of it is left.
+     */
+    private final Path glideRegion = new Path();
+    private final java.util.List<Path> glideParts = new java.util.ArrayList<>();
+    private final java.util.List<Path> glideDrawn = new java.util.ArrayList<>();
+    private float[] glideAlpha = new float[0];
+    private final Path glideMoved = new Path();
+    private final RectF glideBounds = new RectF();
+    private float glideRowHeight;
+    private final Path fadingOutline = new Path();
+    private float fadingAlpha;
+    private float outlineAlpha = 1f;
+    /** A month slide: the old page's picture leaving in the card's overlay, and the new page coming in. */
+    private LinearLayout monthCard;
+    private Bitmap leavingPicture;
+    private BitmapDrawable leavingPage;
+    private ValueAnimator leave;
+    private ValueAnimator enter;
+    private boolean entering;
+    /** The new page's entrance waits for both: the old page gone and the new month's days filled. */
+    private boolean leftPage;
+    private boolean daysFilled;
+    /** The new page has started coming in since the last month change. */
+    private boolean pageCame;
+    private int enterSide;
+    private final Runnable enterSoon = new Runnable() {
+        @Override
+        public void run() {
+            enterMonth();
+        }
+    };
     private String permissionText;
     private Dialog picker;
     private int pickYear;
@@ -203,7 +263,7 @@ public class MainActivity extends Screen {
 
         // The month's nav, totals, calendar and All time sit straight on the page, with no card around them. A sideways
         // swipe anywhere on them moves one month.
-        LinearLayout monthCard = new SwipeCard();
+        monthCard = new SwipeCard();
         monthCard.setOrientation(LinearLayout.VERTICAL);
         column.addView(monthCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
@@ -260,7 +320,7 @@ public class MainActivity extends Screen {
         monthRow.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openContacts(Words.monthTitle(view.getYear(), view.getMonthValue()), view.atDay(1).toString(), view.atEndOfMonth().toString());
+                openContacts(v, Words.monthTitle(view.getYear(), view.getMonthValue()), view.atDay(1).toString(), view.atEndOfMonth().toString());
             }
         });
 
@@ -293,7 +353,9 @@ public class MainActivity extends Screen {
             @Override
             public void onClick(View v) {
                 if (period == null) return;
-                openContacts(period.label(periodK, today), period.first(periodK).toString(), period.last(periodK).toString());
+                // The period the card shows: the marked one once known, even while a step waits for the record.
+                long k = markedKnown ? markedK : periodK;
+                openContacts(periodLine, period.label(k, today), period.first(k).toString(), period.last(k).toString());
             }
         });
 
@@ -334,7 +396,7 @@ public class MainActivity extends Screen {
         allRow.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openContacts("All time", null, null);
+                openContacts(v, "All time", null, null);
             }
         });
 
@@ -394,7 +456,7 @@ public class MainActivity extends Screen {
 
     /** A totals row: a small label, then the call time in bold, the calls and the texts. */
     private Button totalRow(int id) {
-        Button row = new Button(this);
+        Button row = new TotalButton();
         row.setId(id);
         row.setAllCaps(false);
         row.setStateListAnimator(null);
@@ -435,10 +497,11 @@ public class MainActivity extends Screen {
         /** The pay period's outline goes first, beneath the days, and may reach a few dp past the grid into the gaps. */
         @Override
         protected void dispatchDraw(Canvas canvas) {
-            if (!outline.isEmpty() && grid != null) {
+            if (grid != null) {
+                // It rides with its month: the grid's own offset and fade during a month slide.
                 canvas.save();
-                canvas.translate(grid.getLeft(), grid.getTop());
-                canvas.drawPath(outline, outlinePaint);
+                canvas.translate(grid.getLeft() + grid.getTranslationX(), grid.getTop() + grid.getTranslationY());
+                strokeOutline(canvas, grid.getAlpha());
                 canvas.restore();
             }
             super.dispatchDraw(canvas);
@@ -527,6 +590,139 @@ public class MainActivity extends Screen {
         }
     }
 
+    /**
+     * A totals row whose text alone can fade, so a changed total swaps with a short fade while its fill, ripple and size
+     * stay as they are. The background is drawn outside onDraw, so only the text goes through the faded layer.
+     */
+    private final class TotalButton extends Button {
+        private float textAlpha = 1f;
+        private boolean placeholder = true;
+        private boolean fadingOut;
+        private ValueAnimator fade;
+        private CharSequence nextText;
+        private CharSequence nextWords;
+
+        TotalButton() {
+            super(MainActivity.this);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            if (textAlpha >= 1f) {
+                super.onDraw(canvas);
+                return;
+            }
+            if (textAlpha <= 0f) return;
+            int saved = canvas.saveLayerAlpha(getScrollX(), getScrollY(), getScrollX() + getWidth(), getScrollY() + getHeight(),
+                Math.round(255 * textAlpha));
+            super.onDraw(canvas);
+            canvas.restoreToCount(saved);
+        }
+
+        /** New words for the row: at once for the "…" placeholder and the first value after it, otherwise with the fade. */
+        void show(CharSequence text, CharSequence words, boolean isPlaceholder) {
+            boolean first = placeholder;
+            placeholder = isPlaceholder;
+            if (first || isPlaceholder || !ValueAnimator.areAnimatorsEnabled() || !isLaidOut()) {
+                settle(text, words);
+                return;
+            }
+            boolean same = same(text, words, getText(), getContentDescription());
+            if (fade == null) {
+                if (!same) fadeOut(text, words);
+                return;
+            }
+            if (fadingOut) {
+                // The words going out are the right ones again: they come back from where they are.
+                if (same) fadeIn();
+                else {
+                    nextText = text;
+                    nextWords = words;
+                }
+            } else if (!same) {
+                fadeOut(text, words);
+            }
+        }
+
+        private boolean same(CharSequence text, CharSequence words, CharSequence shownText, CharSequence shownWords) {
+            return text.toString().equals(String.valueOf(shownText)) && String.valueOf(words).equals(String.valueOf(shownWords));
+        }
+
+        /** The end of every swap, and the whole of one when animations are off: the words in place, fully shown. */
+        private void settle(CharSequence text, CharSequence words) {
+            stop();
+            setText(text);
+            setContentDescription(words);
+            textAlpha = 1f;
+            invalidate();
+        }
+
+        void stop() {
+            ValueAnimator running = fade;
+            fade = null;
+            fadingOut = false;
+            if (running != null) running.cancel();
+        }
+
+        private void fadeOut(CharSequence text, CharSequence words) {
+            final float from = textAlpha;
+            stop();
+            nextText = text;
+            nextWords = words;
+            fadingOut = true;
+            final ValueAnimator out = ValueAnimator.ofFloat(from, 0f);
+            out.setDuration(Math.max(1, Math.round(60 * from)));
+            out.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animator) {
+                    if (fade != out) return;
+                    textAlpha = (float) animator.getAnimatedValue();
+                    invalidate();
+                }
+            });
+            out.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animator) {
+                    if (fade != out) return;
+                    // The swap: label, figures and spoken words change together.
+                    setText(nextText);
+                    setContentDescription(nextWords);
+                    textAlpha = 0f;
+                    fadeIn();
+                }
+            });
+            fade = out;
+            out.start();
+        }
+
+        private void fadeIn() {
+            float from = textAlpha;
+            stop();
+            final ValueAnimator in = ValueAnimator.ofFloat(from, 1f);
+            in.setDuration(Math.max(1, Math.round(140 * (1f - from))));
+            in.setInterpolator(ARRIVE);
+            in.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animator) {
+                    if (fade != in) return;
+                    textAlpha = (float) animator.getAnimatedValue();
+                    invalidate();
+                }
+            });
+            in.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animator) {
+                    if (fade != in) return;
+                    fade = null;
+                    textAlpha = 1f;
+                    invalidate();
+                }
+            });
+            fade = in;
+            in.start();
+        }
+    }
+
     private void showRow(Button row, String label, Record.Totals totals) {
         SpannableStringBuilder text = new SpannableStringBuilder(label);
         text.setSpan(new CaptionSpan(), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -543,10 +739,10 @@ public class MainActivity extends Screen {
             // The texts' own time, when the owner gives each text some seconds: a line of its own, never in the call time.
             if (textSeconds > 0) text.append("\nText time ").append(Words.textTime(totals.texts, textSeconds));
         }
-        row.setText(text);
-        row.setContentDescription(totals == null ? label : label + ", call time " + Words.fullTime(totals.callS) + ", "
+        String words = totals == null ? label : label + ", call time " + Words.fullTime(totals.callS) + ", "
             + Words.plural(totals.calls, "call") + ", " + Words.plural(totals.texts, "text")
-            + (textSeconds > 0 ? ", text time " + Words.textTime(totals.texts, textSeconds) : ""));
+            + (textSeconds > 0 ? ", text time " + Words.textTime(totals.texts, textSeconds) : "");
+        ((TotalButton) row).show(text, words, totals == null);
     }
 
     @Override
@@ -586,6 +782,12 @@ public class MainActivity extends Screen {
     protected void onDestroy() {
         // An open picker goes with the screen, so Android has no window left behind.
         if (picker != null) picker.dismiss();
+        // Any motion ends with the screen, and the month slide's picture is freed.
+        if (view != null) {
+            endSlide();
+            stopOutline();
+            for (Button row : new Button[] {monthRow, periodRow, allRow}) ((TotalButton) row).stop();
+        }
         super.onDestroy();
     }
 
@@ -610,15 +812,11 @@ public class MainActivity extends Screen {
     }
 
     private void go(int by) {
-        view = view.plusMonths(by);
-        drawMonth();
-        load();
+        turnTo(view.plusMonths(by));
     }
 
     private void jump(YearMonth month) {
-        view = month;
-        drawMonth();
-        load();
+        turnTo(month);
     }
 
     private void stepPeriod(int by) {
@@ -627,13 +825,200 @@ public class MainActivity extends Screen {
         periodFollow = periodK == period.index(today);
         // The arrows' limits at once, so a second quick swipe before the record answers can't step past them.
         enablePeriodArrows();
+        // A period with no day on this page turns the calendar to it. Its outline waits for the record's answer, so the
+        // new page never shows the period the card no longer has.
+        YearMonth turn = periodMonth();
+        if (turn == null) {
+            load();
+            return;
+        }
+        markedKnown = false;
+        turnTo(turn);
+    }
+
+    /**
+     * The month to turn to for the stepped period: none when one of its days is on this page, otherwise the month of its
+     * first day, kept within the months the month arrows allow.
+     */
+    private YearMonth periodMonth() {
+        LocalDate first = period.first(periodK), last = period.last(periodK);
+        if (onPage(first, last)) return null;
+        YearMonth month = YearMonth.from(first);
+        if (earliest != null && month.atEndOfMonth().toString().compareTo(earliest) < 0) {
+            try {
+                month = YearMonth.parse(earliest.substring(0, 7));
+            } catch (RuntimeException unreadable) {
+                return null;
+            }
+        }
+        if (month.isAfter(thisMonth)) month = thisMonth;
+        return month.equals(view) ? null : month;
+    }
+
+    /** Whether any day from first to last is in the month on screen. */
+    private boolean onPage(LocalDate first, LocalDate last) {
+        return !last.isBefore(view.atDay(1)) && !first.isAfter(view.atEndOfMonth());
+    }
+
+    private void openContacts(View from, String label, String first, String last) {
+        Intent intent = new Intent(this, ContactsActivity.class).putExtra("label", label);
+        if (first != null) intent.putExtra("from", first).putExtra("to", last);
+        openFrom(from, intent);
+    }
+
+    /** Opens a day or a list out of the tile or card that was tapped; with animations removed, as before. */
+    private void openFrom(View from, Intent intent) {
+        if (ValueAnimator.areAnimatorsEnabled() && from != null && from.getWidth() > 0 && from.getHeight() > 0) {
+            startActivity(intent, ActivityOptions.makeScaleUpAnimation(from, 0, 0, from.getWidth(), from.getHeight()).toBundle());
+        } else {
+            startActivity(intent);
+        }
+    }
+
+    // The month slide
+
+    /**
+     * Shows another month. With animations on, the old page's picture leaves toward the side it goes, and the new page
+     * comes in from the other once the old one is gone and its days are filled, or 120 ms after the tap at the latest,
+     * so the two months are never both readable. A later month comes from the right.
+     */
+    private void turnTo(YearMonth month) {
+        endSlide();
+        boolean slide = ValueAnimator.areAnimatorsEnabled() && !month.equals(view) && grid.getWidth() > 0 && grid.getHeight() > 0;
+        int side = month.isAfter(view) ? 1 : -1;
+        pageCame = false;
+        daysFilled = false;
+        leftPage = false;
+        if (slide) slide = leavePage(side);
+        view = month;
+        drawMonth();
+        if (slide) {
+            entering = true;
+            enterSide = side;
+            grid.setAlpha(0f);
+            grid.setTranslationX(side * dp(24));
+            monthCard.invalidate();
+            // 120 ms, stretched like the animations themselves when the animator duration scale is changed.
+            float scale = android.provider.Settings.Global.getFloat(getContentResolver(), android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
+            handler.postDelayed(enterSoon, Math.max(1, Math.round(120 * scale)));
+        }
         load();
     }
 
-    private void openContacts(String label, String from, String to) {
-        Intent intent = new Intent(this, ContactsActivity.class).putExtra("label", label);
-        if (from != null) intent.putExtra("from", from).putExtra("to", to);
-        startActivity(intent);
+    /** The grid's part of the card, outline included, as a picture in the card's overlay that fades and moves away. */
+    private boolean leavePage(int side) {
+        int pad = dp(GAP_S);
+        int width = grid.getWidth(), height = grid.getHeight() + 2 * pad;
+        try {
+            leavingPicture = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        } catch (OutOfMemoryError | IllegalArgumentException error) {
+            leavingPicture = null;
+            return false;
+        }
+        Canvas canvas = new Canvas(leavingPicture);
+        canvas.translate(0, pad);
+        strokeOutline(canvas, 1f);
+        grid.draw(canvas);
+        final BitmapDrawable page = new BitmapDrawable(getResources(), leavingPicture);
+        final int left = grid.getLeft(), top = grid.getTop() - pad;
+        page.setBounds(left, top, left + width, top + height);
+        monthCard.getOverlay().add(page);
+        leavingPage = page;
+        final float away = -side * dp(16);
+        final ValueAnimator going = ValueAnimator.ofFloat(0f, 1f);
+        going.setDuration(70);
+        going.setInterpolator(LEAVE);
+        going.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                if (leave != going) return;
+                float f = (float) animator.getAnimatedValue();
+                int x = left + Math.round(away * f);
+                page.setBounds(x, top, x + page.getBounds().width(), top + page.getBounds().height());
+                page.setAlpha(Math.round(255 * (1f - f)));
+                monthCard.invalidate();
+            }
+        });
+        going.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                if (leave != going) return;
+                freeLeavingPage();
+                leftPage = true;
+                if (daysFilled) enterMonth();
+            }
+        });
+        leave = going;
+        going.start();
+        return true;
+    }
+
+    private void freeLeavingPage() {
+        ValueAnimator running = leave;
+        leave = null;
+        if (running != null) running.cancel();
+        if (leavingPage != null) monthCard.getOverlay().remove(leavingPage);
+        leavingPage = null;
+        leavingPicture = null;
+    }
+
+    /** The month's days are filled: the new page comes in now if the old one has already gone. */
+    private void filledPage() {
+        daysFilled = true;
+        if (entering && leftPage) enterMonth();
+    }
+
+    /**
+     * The new page comes in over 220 ms: from 24dp to the side to its place across the whole time, and from clear to
+     * solid across the first 60 percent. A picture of the old page still leaving goes at once.
+     */
+    private void enterMonth() {
+        handler.removeCallbacks(enterSoon);
+        if (!entering) return;
+        entering = false;
+        pageCame = true;
+        freeLeavingPage();
+        final float from = enterSide * dp(24);
+        final ValueAnimator coming = ValueAnimator.ofFloat(0f, 1f);
+        coming.setDuration(220);
+        coming.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                if (enter != coming) return;
+                float t = (float) animator.getAnimatedValue();
+                grid.setAlpha(ARRIVE.getInterpolation(Math.min(1f, t / 0.6f)));
+                grid.setTranslationX(from * (1f - ARRIVE.getInterpolation(t)));
+                monthCard.invalidate();
+            }
+        });
+        coming.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                if (enter != coming) return;
+                enter = null;
+                placeGrid();
+            }
+        });
+        enter = coming;
+        coming.start();
+    }
+
+    /** Ends a month slide at once: the picture gone and freed, the grid in place. Also the end of every slide. */
+    private void endSlide() {
+        handler.removeCallbacks(enterSoon);
+        entering = false;
+        ValueAnimator running = enter;
+        enter = null;
+        if (running != null) running.cancel();
+        freeLeavingPage();
+        placeGrid();
+    }
+
+    private void placeGrid() {
+        if (grid == null) return;
+        grid.setAlpha(1f);
+        grid.setTranslationX(0f);
+        monthCard.invalidate();
     }
 
     // The calendar
@@ -643,6 +1028,8 @@ public class MainActivity extends Screen {
         String shown = Words.monthTitle(view.getYear(), view.getMonthValue());
         title.show(shown);
         title.setContentDescription(shown + ". Pick a month");
+        // A new page: the outline's motion ends here and it is drawn in place below.
+        stopOutline();
         grid.removeAllViews();
         cells.clear();
         weeks.clear();
@@ -684,7 +1071,7 @@ public class MainActivity extends Screen {
 
     /** A day in the pay period shown on the card. */
     private boolean inPeriod(LocalDate date) {
-        return period != null && !date.isBefore(period.first(markedK)) && !date.isAfter(period.last(markedK));
+        return period != null && markedKnown && !date.isBefore(period.first(markedK)) && !date.isAfter(period.last(markedK));
     }
 
     /**
@@ -704,6 +1091,7 @@ public class MainActivity extends Screen {
             }
             if (from >= 0) spans.add(new int[] {r, from, to});
         }
+        outlineMonth = view;
         drawOutline();
         for (Map.Entry<String, LinearLayout> cell : cells.entrySet()) {
             describe(cell.getValue(), LocalDate.parse(cell.getKey()));
@@ -723,14 +1111,14 @@ public class MainActivity extends Screen {
      * clear of today's circle, and past the grid's top and bottom into the space beside it.
      */
     private void drawOutline() {
-        outline.reset();
-        if (outlinePaint == null) {
-            outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            outlinePaint.setStyle(Paint.Style.STROKE);
-            outlinePaint.setStrokeWidth(1.5f * getResources().getDisplayMetrics().density);
-            outlinePaint.setColor(accent);
-            outlinePaint.setPathEffect(new CornerPathEffect(dp(10)));
+        outlinePaint();
+        if (outlinePhase == GLIDE) {
+            // A layout during a glide rebuilds it and draws it where it is, never its end.
+            buildGlide();
+            drawGlide();
+            return;
         }
+        outline.reset();
         float half = outlinePaint.getStrokeWidth() / 2f;
         float gap = dp(narrow ? 2 : 4);
         // About 2dp of air above a row's tops, today's circle included, as far as the gap allows; the rest goes below.
@@ -756,6 +1144,319 @@ public class MainActivity extends Screen {
         }
         View card = (View) grid.getParent();
         if (card != null) card.invalidate();
+    }
+
+    private Paint outlinePaint() {
+        if (outlinePaint == null) {
+            outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            outlinePaint.setStyle(Paint.Style.STROKE);
+            outlinePaint.setStrokeWidth(1.5f * getResources().getDisplayMetrics().density);
+            outlinePaint.setColor(accent);
+            outlinePaint.setPathEffect(new CornerPathEffect(dp(10)));
+        }
+        return outlinePaint;
+    }
+
+    /** Strokes the outline, and the old one while it fades, at the given share of their own alpha, in grid coordinates. */
+    private void strokeOutline(Canvas canvas, float alpha) {
+        Paint paint = outlinePaint();
+        int full = accent >>> 24;
+        if (!fadingOutline.isEmpty() && fadingAlpha * alpha > 0f) {
+            paint.setAlpha(Math.round(full * fadingAlpha * alpha));
+            canvas.drawPath(fadingOutline, paint);
+        }
+        if (outlinePhase == GLIDE) {
+            for (int i = 0; i < glideDrawn.size(); i++) {
+                float a = glideAlpha[i] * outlineAlpha * alpha;
+                if (a <= 0f || glideDrawn.get(i).isEmpty()) continue;
+                paint.setAlpha(Math.round(full * a));
+                canvas.drawPath(glideDrawn.get(i), paint);
+            }
+        } else if (!outline.isEmpty() && outlineAlpha * alpha > 0f) {
+            paint.setAlpha(Math.round(full * outlineAlpha * alpha));
+            canvas.drawPath(outline, paint);
+        }
+        paint.setAlpha(full);
+    }
+
+    // The outline's motion
+
+    /** Whether the week rows have their places, for a glide's geometry. */
+    private boolean gridLaidOut() {
+        return weeks.size() >= 2 && weeks.get(0).getWidth() > 0 && weeks.get(0).getChildCount() == 7;
+    }
+
+    /** The distance from one week row's top to the next, as the real rows have it. */
+    private float pitch() {
+        int n = weeks.size();
+        return (float) (weeks.get(n - 1).getTop() - weeks.get(0).getTop()) / (n - 1);
+    }
+
+    /**
+     * Where week row r's band starts, for any r, the rows above the first week and below the last included: the same
+     * bands as the static outline, from the gap between rows, or past the grid's top and bottom at its edges, with the
+     * real rows' pitch beyond them.
+     */
+    private float bandTop(int r, float edge, float above, float pitch) {
+        int n = weeks.size();
+        if (r <= 0) return weeks.get(0).getTop() - edge + r * pitch;
+        if (r >= n) return weeks.get(n - 1).getBottom() + edge + (r - n) * pitch;
+        return weeks.get(r).getTop() - above;
+    }
+
+    /**
+     * Builds a glide's geometry from the laid-out rows: this month's own region, its real days row by row with the same
+     * bands as the static outline, and the target period's shape laid out as if the month had no edges, split into its
+     * parts. Rows of a part share a column and overlap by a pixel, as the static outline joins them; a wrapped week's two
+     * rows share none and are two parts.
+     */
+    private void buildGlide() {
+        glideRegion.reset();
+        glideParts.clear();
+        glideDrawn.clear();
+        if (!gridLaidOut() || glideFirst == null) {
+            glideAlpha = new float[0];
+            return;
+        }
+        float half = outlinePaint().getStrokeWidth() / 2f;
+        float gap = dp(narrow ? 2 : 4);
+        float above = Math.min(dp(2) + half, gap / 2 + dp(1));
+        float edge = dp(2) + half;
+        float pitch = pitch();
+        int n = weeks.size();
+        LinearLayout first = weeks.get(0);
+        glideRowHeight = first.getHeight();
+        float[] lefts = new float[7], rights = new float[7];
+        for (int c = 0; c < 7; c++) {
+            View cell = first.getChildAt(c);
+            lefts[c] = first.getLeft() + cell.getLeft() + half;
+            rights[c] = first.getLeft() + cell.getRight() - half;
+        }
+        int count = view.lengthOfMonth();
+        int lastColumn = (blanks + count - 1) % 7;
+        for (int r = 0; r < n; r++) {
+            int from = r == 0 ? blanks : 0, to = r == n - 1 ? lastColumn : 6;
+            float top = bandTop(r, edge, above, pitch) - (r > 0 ? 1 : 0);
+            glideRegion.op(rect(lefts[from], top, rights[to], bandTop(r + 1, edge, above, pitch)), Path.Op.UNION);
+        }
+        long a = ChronoUnit.DAYS.between(view.atDay(1), glideFirst) + blanks;
+        long b = ChronoUnit.DAYS.between(view.atDay(1), glideLast) + blanks;
+        long firstRow = Math.floorDiv(a, 7L), lastRow = Math.floorDiv(b, 7L);
+        Path part = null;
+        int beforeFrom = -1, beforeTo = -1;
+        for (long r = firstRow; r <= lastRow; r++) {
+            int from = r == firstRow ? (int) Math.floorMod(a, 7L) : 0, to = r == lastRow ? (int) Math.floorMod(b, 7L) : 6;
+            boolean joins = r > firstRow && from <= beforeTo && beforeFrom <= to;
+            beforeFrom = from;
+            beforeTo = to;
+            // Rows more than seven away from the grid can never reach it within a six-row move.
+            if (r < -7 || r > n + 6) {
+                part = null;
+                continue;
+            }
+            if (!joins || part == null) {
+                part = new Path();
+                glideParts.add(part);
+                glideDrawn.add(new Path());
+            }
+            float top = bandTop((int) r, edge, above, pitch) - (joins ? 1 : 0);
+            part.op(rect(lefts[from], top, rights[to], bandTop((int) r + 1, edge, above, pitch)), Path.Op.UNION);
+        }
+        glideAlpha = new float[glideParts.size()];
+    }
+
+    /**
+     * One frame of a glide: each part moved by glideOffset, drawn only where it meets this month's days, and faded by
+     * its clipped height over 0.6 of a row, so a part sliding off the grid is gone before it is a sliver. At offset 0
+     * every part left on the page is at least a row tall and solid: the static outline.
+     */
+    private void drawGlide() {
+        for (int i = 0; i < glideParts.size(); i++) {
+            Path drawn = glideDrawn.get(i);
+            glideParts.get(i).offset(0f, glideOffset, glideMoved);
+            if (!drawn.op(glideMoved, glideRegion, Path.Op.INTERSECT)) drawn.reset();
+            float height = 0f;
+            if (!drawn.isEmpty()) {
+                drawn.computeBounds(glideBounds, true);
+                height = glideBounds.height();
+            }
+            glideAlpha[i] = glideRowHeight > 0 ? Math.min(1f, height / (0.6f * glideRowHeight)) : 0f;
+        }
+        if (monthCard != null) monthCard.invalidate();
+    }
+
+    private static Path rect(float left, float top, float right, float bottom) {
+        Path part = new Path();
+        part.addRect(left, top, right, bottom, Path.Direction.CW);
+        return part;
+    }
+
+    /**
+     * Moves the outline from the period it marked (was, wasK) to the card's (period, markedK), before markPeriod draws
+     * the new one: a glide for whole weeks, a fade for other lengths, or the plain cut when the month changed since the
+     * outline was drawn, the old period is not known, neither has a day here, the move is more than six rows, the grid
+     * has no layout yet, or animations are removed. A move already running is taken from where it is now.
+     */
+    private void moveOutline(PayPeriod was, long wasK, boolean wasKnown) {
+        if (period == null) {
+            stopOutline();
+            return;
+        }
+        boolean changed = !wasKnown || was == null || wasK != markedK || !was.start.equals(period.start) || was.days != period.days;
+        if (!changed) return;
+        // The record answered only after a turned month began coming in: the outline fades in rather than popping.
+        if (!wasKnown && ValueAnimator.areAnimatorsEnabled() && (enter != null || pageCame)) {
+            stopOutline();
+            fadeInOutline();
+            return;
+        }
+        if (!ValueAnimator.areAnimatorsEnabled() || !wasKnown || was == null || !view.equals(outlineMonth) || !gridLaidOut()) {
+            stopOutline();
+            return;
+        }
+        LocalDate toFirst = period.first(markedK), toLast = period.last(markedK);
+        boolean gliding = outlinePhase == GLIDE;
+        LocalDate fromFirst = gliding ? glideFirst : was.first(wasK), fromLast = gliding ? glideLast : was.last(wasK);
+        if (!onPage(fromFirst, fromLast) && !onPage(toFirst, toLast)) {
+            stopOutline();
+            return;
+        }
+        long days = ChronoUnit.DAYS.between(fromFirst, toFirst);
+        boolean weeks = period.days % 7 == 0 && days % 7 == 0
+            && ChronoUnit.DAYS.between(fromFirst, fromLast) == ChronoUnit.DAYS.between(toFirst, toLast);
+        if (weeks) {
+            if (outlinePhase == FADE_OUT || outlinePhase == FADE_IN) stopOutline();
+            float pitch = pitch();
+            float from = (outlinePhase == GLIDE ? glideOffset : 0f) - (days / 7f) * pitch;
+            // No rows to move, or more than six: the plain cut.
+            if (Math.abs(from) < 0.5f || Math.abs(from) > 6 * pitch + 1) {
+                stopOutline();
+                return;
+            }
+            glide(toFirst, toLast, from, pitch);
+            return;
+        }
+        // Other lengths: the shapes differ, so the old one fades out and the new one in.
+        if (outlinePhase == FADE_OUT) return;
+        float start = outlinePhase == FADE_IN ? outlineAlpha : 1f;
+        cancelOutlineMove();
+        if (outlinePhase == GLIDE) {
+            // From a glide: what is on screen now is its parts.
+            fadingOutline.reset();
+            for (int i = 0; i < glideDrawn.size(); i++) if (glideAlpha[i] > 0f) fadingOutline.addPath(glideDrawn.get(i));
+        } else {
+            fadingOutline.set(outline);
+        }
+        fadingAlpha = start;
+        outlineAlpha = 0f;
+        fadeOutline(start);
+    }
+
+    private void glide(LocalDate first, LocalDate last, float from, float pitch) {
+        cancelOutlineMove();
+        outlinePhase = GLIDE;
+        glideFirst = first;
+        glideLast = last;
+        glideOffset = from;
+        buildGlide();
+        long rows = Math.round(Math.abs(from) / pitch);
+        final ValueAnimator move = ValueAnimator.ofFloat(from, 0f);
+        move.setDuration(Math.min(380, 220 + 40 * rows));
+        move.setInterpolator(ARRIVE);
+        move.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                if (outlineMove != move) return;
+                glideOffset = (float) animator.getAnimatedValue();
+                drawGlide();
+            }
+        });
+        move.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                if (outlineMove == move) stopOutline();
+            }
+        });
+        outlineMove = move;
+        move.start();
+    }
+
+    /** The old outline fades out over 90 ms, then the new one fades in over 160 ms. */
+    private void fadeOutline(float from) {
+        outlinePhase = FADE_OUT;
+        final ValueAnimator out = ValueAnimator.ofFloat(from, 0f);
+        out.setDuration(Math.max(1, Math.round(90 * from)));
+        out.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                if (outlineMove != out) return;
+                fadingAlpha = (float) animator.getAnimatedValue();
+                monthCard.invalidate();
+            }
+        });
+        out.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                if (outlineMove != out) return;
+                fadeInOutline();
+            }
+        });
+        outlineMove = out;
+        out.start();
+    }
+
+    /** The outline on the card fades in over 160 ms. */
+    private void fadeInOutline() {
+        cancelOutlineMove();
+        fadingOutline.reset();
+        fadingAlpha = 0f;
+        outlineAlpha = 0f;
+        outlinePhase = FADE_IN;
+        final ValueAnimator in = ValueAnimator.ofFloat(0f, 1f);
+        in.setDuration(160);
+        in.setInterpolator(ARRIVE);
+        in.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                if (outlineMove != in) return;
+                outlineAlpha = (float) animator.getAnimatedValue();
+                monthCard.invalidate();
+            }
+        });
+        in.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                if (outlineMove == in) stopOutline();
+            }
+        });
+        outlineMove = in;
+        monthCard.invalidate();
+        in.start();
+    }
+
+    private void cancelOutlineMove() {
+        ValueAnimator running = outlineMove;
+        outlineMove = null;
+        if (running != null) running.cancel();
+    }
+
+    /**
+     * Ends the outline's motion at once and draws the static outline: the end of every glide and fade, and the whole of
+     * a change when animations are removed.
+     */
+    private void stopOutline() {
+        cancelOutlineMove();
+        outlinePhase = STILL;
+        glideFirst = null;
+        glideLast = null;
+        glideOffset = 0f;
+        glideParts.clear();
+        glideDrawn.clear();
+        glideRegion.reset();
+        fadingOutline.reset();
+        fadingAlpha = 0f;
+        outlineAlpha = 1f;
+        if (grid != null) drawOutline();
     }
 
     /** How far a two-digit day number starts inside its 22dp room: where the time, the texts and the weekdays start. */
@@ -815,7 +1516,7 @@ public class MainActivity extends Screen {
         cell.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, DayActivity.class).putExtra("day", date.toString()));
+                openFrom(v, new Intent(MainActivity.this, DayActivity.class).putExtra("day", date.toString()));
             }
         });
         return cell;
@@ -1123,6 +1824,9 @@ public class MainActivity extends Screen {
         problem.setText(trouble == null ? "" : trouble);
         problem.setVisibility(trouble == null ? View.GONE : View.VISIBLE);
         if (found.problem != null) return;
+        PayPeriod was = period;
+        long wasK = markedK;
+        boolean wasKnown = markedKnown;
         earliest = found.earliest;
         empty.setVisibility(earliest == null && permissionText == null ? View.VISIBLE : View.GONE);
         textSeconds = found.textSeconds;
@@ -1138,8 +1842,12 @@ public class MainActivity extends Screen {
             showRow(periodRow, period.label(periodK, today), found.periodTotals);
         }
         markedK = periodK;
+        markedKnown = period != null;
+        moveOutline(was, wasK, wasKnown);
         markPeriod();
         showRow(allRow, "All time", found.all);
         drawNav();
+        // A month sliding in waits for its days, so they don't pop in mid-slide.
+        if (entering) filledPage();
     }
 }

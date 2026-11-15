@@ -24,7 +24,14 @@ that Continue reads straight away with no role dialog (the fix), and restores th
 mechanism can set the default on this AVD, that path is skipped too. The plain pieces behind all of this are covered by
 tests/test_calltally.py.
 
-Usage: python3 tools/emulator_check.py [--out FOLDER] [--shots FOLDER]   (default: a new folder under $TMPDIR)
+The month screen's motion (1.1.0) is turned off for the ordinary checks: the three animation scales are set to 0, so
+every change takes the instant path the app also takes when Remove animations is on, and screenshots and reads right
+after a tap never catch a move halfway. With --motion it also films the real animations: with the scales at 10, so each
+move lasts seconds, it takes bursts of frames through each move into motion/<name>/ as numbered PNGs, tries one
+real-time screen recording at scale 1, and checks that the settled screen after each animated move is the same, pixel
+for pixel, as the one the same move leaves with the scales at 0. The scales go back to 1 at the end, even on failure.
+
+Usage: python3 tools/emulator_check.py [--out FOLDER] [--shots FOLDER] [--motion]   (default: a new folder under $TMPDIR)
 Needs the Android tools in ~/local/calltally-build (see android/app/build.sh) and the AVD "ct". Takes a few minutes.
 """
 import argparse
@@ -34,6 +41,7 @@ import shlex
 import shutil
 import signal
 import sqlite3
+import struct
 import subprocess
 import sys
 import tempfile
@@ -59,6 +67,7 @@ MARKER = "zebra marmalade 4417"
 NOT_ALLOWED = "Needs permission. Open this app to allow it."
 GOOGLE_SMS = "com.android.messaging"  # the emulator image's default messaging app
 REFUSED_LINE = "The messaging app wasn't changed, so nothing was read."
+SCALES = ("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
 T = 1793000000  # 2026-10-26 in the morning, Pacific time. Every seeded time is fixed, so two runs keep the same rows.
 
 DANA1, DANA2, SAM, MOM, PLUMBING = "+15551234567", "5550001111", "5552223333", "5559998888", "5557776666"
@@ -179,10 +188,11 @@ class Run:
         out = self.adb("shell", "dumpsys", "package", APP)
         return {p for p in PERMISSIONS if f"{p}: granted=true" in out}
 
-    def pay(self, start):
-        """Sets the pay period start through the test hook, as the first start or Options would."""
+    def pay(self, start, days=None):
+        """Sets the pay period start through the test hook, as the first start or Options would; 14 days unless told."""
+        extra = ["--es", "pay_days", str(days)] if days else []
         out = self.sh("am", "broadcast", "--include-stopped-packages", "-a", f"{APP}.TEST_TICK", "-n", f"{APP}/.TestHook",
-                      "--es", "pay_start", start)
+                      "--es", "pay_start", start, *extra)
         return out.split('data="')[1].split('"')[0] if 'data="' in out else out.strip()
 
     def put(self, path, data):
@@ -197,6 +207,47 @@ class Run:
         """The names in one of the app's own folders, or [] when the folder isn't there."""
         out = self.adb("exec-out", "run-as", APP, "ls", folder, check=False)
         return [] if "No such file" in out else out.split()
+
+    def scales(self, value):
+        """Sets the window, transition and animator scales: 0 turns the app's motion off, 10 makes each move ten times longer."""
+        for key in SCALES:
+            self.adb("shell", "settings", "put", "global", key, str(value), check=False, timeout=30)
+
+    def frame(self):
+        """The screen as (width, height, RGBA bytes), straight from screencap without PNG."""
+        return raw_frame(self.adb("exec-out", "screencap", binary=True))
+
+    def burst(self, folder, act, frames=40, lead=0.4):
+        """Screencaps the screen as fast as the emulator can, on the emulator itself, while act() taps; saves the frames as
+        numbered PNGs in folder, with each frame's time in times.txt. Returns how many frames were saved."""
+        folder.mkdir(parents=True, exist_ok=True)
+        self.adb("shell", "rm -rf /sdcard/motion; mkdir -p /sdcard/motion", check=False)
+        loop = (f"i=0; while [ $i -lt {frames} ]; do echo $i $(date +%s%N) >> /sdcard/motion/times.txt; "
+                f"screencap /sdcard/motion/$(printf %03d $i).raw; i=$((i+1)); done")
+        capture = subprocess.Popen([str(ADB), "-e", "shell", loop], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.env)
+        try:
+            time.sleep(lead)
+            act()
+            capture.wait(timeout=240)
+        finally:
+            if capture.poll() is None:
+                capture.kill()
+        pulled = folder / "raw"
+        if pulled.exists():
+            shutil.rmtree(pulled)
+        self.adb("pull", "/sdcard/motion", str(pulled), timeout=600)
+        saved = 0
+        for name in sorted(pulled.glob("*.raw")):
+            width, height, pixels = raw_frame(name.read_bytes())
+            write_png(folder / f"{name.stem}.png", width, height, pixels)
+            saved += 1
+        times = pulled / "times.txt"
+        if times.exists():
+            stamps = [int(line.split()[1]) for line in times.read_text().split("\n") if len(line.split()) == 2 and line.split()[1].isdigit()]
+            (folder / "times.txt").write_text("".join(f"{i:03d} {(t - stamps[0]) / 1e6:.0f} ms\n" for i, t in enumerate(stamps)))
+        shutil.rmtree(pulled)
+        self.adb("shell", "rm -rf /sdcard/motion", check=False)
+        return saved
 
     def shot(self, name):
         """A screenshot of the emulator's screen into the shots folder."""
@@ -481,6 +532,39 @@ def png_rows(data, last_row):
     return rows, step
 
 
+def raw_frame(data):
+    """A raw screencap (a header of width, height and format, then RGBA pixels) as (width, height, pixels)."""
+    width, height = struct.unpack("<II", data[:8])
+    head = len(data) - width * height * 4
+    if width == 0 or height == 0 or head < 12 or head > 64:
+        raise RuntimeError(f"screencap gave {len(data)} bytes for {width}x{height}")
+    return width, height, data[head:]
+
+
+def write_png(path, width, height, pixels):
+    """Writes RGBA pixels as a PNG, with nothing but the standard library."""
+    stride = width * 4
+    body = b"".join(b"\x00" + pixels[r * stride:(r + 1) * stride] for r in range(height))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+    Path(path).write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                           + chunk(b"IDAT", zlib.compress(body, 3)) + chunk(b"IEND", b""))
+
+
+def region_differs(a, b, top, bottom):
+    """How many pixels differ between two raw frames in the rows from top to bottom."""
+    (wa, ha, pa), (wb, hb, pb) = a, b
+    if (wa, ha) != (wb, hb):
+        return -1
+    stride, count = wa * 4, 0
+    for r in range(max(0, top), min(ha, bottom)):
+        ra, rb = pa[r * stride:(r + 1) * stride], pb[r * stride:(r + 1) * stride]
+        if ra != rb:
+            count += sum(1 for i in range(0, stride, 4) if ra[i:i + 4] != rb[i:i + 4])
+    return count
+
+
 def shaded_days(nodes, shot):
     """The calendar days drawn with the shade, read from the screenshot: the unselected days whose colour, a little in from
     the corner, is not the plain day colour most of them have."""
@@ -589,10 +673,220 @@ def expected(groups, zone):
     return out
 
 
+def card_rows(nodes):
+    """The rows of the screen from the month's name to the All time row: the part a settled move must leave as it was."""
+    top = bounds(by_id(nodes, "month_title")[0])[0][1]
+    bottom = bounds(by_id(nodes, "total_all")[0])[1][1]
+    return top, bottom
+
+
+def motion_two_weeks(run, check, out, month_title, next_title, day_words):
+    """Films the month screen's moves with two-week periods from Oct 25 on the seeded month and the next one, and checks
+    the settled screens against the same moves with no animation."""
+    motion = out / "motion"
+    rotation = run.adb("shell", "settings", "get", "system", "accelerometer_rotation", check=False).strip() or "0"
+
+    def label(ns):
+        return (text_of(ns, "total_period") or "").split("\n")[0]
+
+    # The arrows sit above the calendar and never move, so they are found once: reading the screen with uiautomator
+    # waits for it to be still, which would hold a tap meant for the middle of a move.
+    places = {}
+
+    def tap(name):
+        if name not in places:
+            found = by_id(run.nodes(), name)
+            if not found:
+                raise RuntimeError(f"no {name} on the screen")
+            places[name] = found[0]
+        run.tap(places[name])
+
+    def settle(ready, seconds=30):
+        ns = run.wait_for(ready, seconds)
+        time.sleep(8)
+        return run.nodes()
+
+    def on(month, period):
+        return lambda ns: text_of(ns, "month_title") == month and label(ns).startswith(period)
+
+    def film(name, act, frames=80):
+        saved = run.burst(motion / name, act, frames)
+        print(f"info  motion: {saved} frames of {name}", flush=True)
+
+    try:
+        run.scales(10)
+        # A fresh start opens on this month with the current period, Nov 8 – Nov 21.
+        run.sh("am", "force-stop", APP)
+        run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+        nodes = settle(on(next_title, "Pay period Nov 8"), 30)
+        if not on(next_title, "Pay period Nov 8")(nodes):
+            check("motion: the month screen opens on November with Nov 8 – Nov 21 for the films", False,
+                  f"{text_of(nodes, 'month_title')!r} {label(nodes)!r}")
+            return
+        top, bottom = card_rows(nodes)
+        for name in ("month_prev", "month_next", "period_prev", "period_next"):
+            places[name] = by_id(nodes, name)[0]
+        # (a) a period step that stays on the month, back and forward.
+        film("a-two-weeks-back", lambda: tap("period_prev"))
+        nodes = settle(on(next_title, "Pay period Oct 25"))
+        settled_oct25 = run.frame()
+        film("a-two-weeks-forward", lambda: tap("period_next"))
+        nodes = settle(on(next_title, "Pay period Nov 8"))
+        settled_nov8 = run.frame()
+        # (e) a total changing: the pay period row's words swap with a fade as the period steps back.
+        film("e-total-changes", lambda: tap("period_prev"), 60)
+        nodes = settle(on(next_title, "Pay period Oct 25"))
+        # (g) two quick steps: on to Nov 8, then back to Oct 25 while the outline is still gliding.
+        film("g-two-quick-steps", lambda: (tap("period_next"), time.sleep(1.2), tap("period_prev")), 100)
+        nodes = settle(on(next_title, "Pay period Oct 25"))
+        after_retarget = run.frame()
+        differs = region_differs(settled_oct25, after_retarget, top, bottom)
+        check("motion: after a glide is turned back mid-way, the settled screen is the same as a plain step's", differs == 0,
+              f"{differs} pixels differ")
+        # (d) the previous-month arrow, to October.
+        film("d-previous-month", lambda: tap("month_prev"))
+        nodes = settle(on(month_title, "Pay period Oct 25"))
+        settled_oct = run.frame()
+        # (c) a period step that turns the month: Nov 8 – Nov 21 has no day in October.
+        film("c-step-turns-month", lambda: tap("period_next"))
+        nodes = settle(on(next_title, "Pay period Nov 8"))
+        after_turn = run.frame()
+        differs = region_differs(settled_nov8, after_turn, top, bottom)
+        check("motion: after the calendar turns to the period, the settled screen is the same as stepping on that month",
+              differs == 0, f"{differs} pixels differ")
+        # (d) back by hand, then the next-month arrow.
+        tap("month_prev")
+        settle(on(month_title, "Pay period Nov 8"))
+        film("d-next-month", lambda: tap("month_next"))
+        nodes = settle(on(next_title, "Pay period Nov 8"))
+        settled_next = run.frame()
+        # (f) a day opening out of its tile: the seeded busy day.
+        tap("month_prev")
+        nodes = settle(on(month_title, "Pay period Nov 8"))
+        cell = next((n for n in by_id(nodes, "day_cell") if n.get("content-desc", "").startswith(day_words)), None)
+        if cell is not None:
+            film("f-day-opens", lambda: run.tap(cell), 80)
+            time.sleep(6)
+            run.sh("input", "keyevent", "KEYCODE_BACK")
+            settle(on(month_title, "Pay period Nov 8"))
+        else:
+            print("info  skipped: the day-opening film, as the busy day's tile was not found")
+        # Rotated away and back during a glide: the screen is drawn afresh and settles with nothing left halfway.
+        tap("month_next")
+        settle(on(next_title, "Pay period Nov 8"))
+        film_rotate = motion / "h-rotate-mid-glide"
+
+        def rotate_mid_glide():
+            tap("period_prev")
+            time.sleep(1.0)
+            run.adb("shell", "settings", "put", "system", "accelerometer_rotation", "0", check=False)
+            run.adb("shell", "settings", "put", "system", "user_rotation", "1", check=False)
+            time.sleep(3)
+            run.adb("shell", "settings", "put", "system", "user_rotation", "0", check=False)
+        saved = run.burst(film_rotate, rotate_mid_glide, 100)
+        print(f"info  motion: {saved} frames of h-rotate-mid-glide", flush=True)
+        nodes = settle(on(next_title, "Pay period Oct 25"), 40)
+        after_rotation = run.frame()
+        top2, bottom2 = card_rows(nodes) if by_id(nodes, "month_title") and by_id(nodes, "total_all") else (top, bottom)
+        differs = region_differs(settled_oct25, after_rotation, top2, bottom2)
+        check("motion: rotated away and back mid-glide, the screen settles the same as a plain step's", differs == 0,
+              f"{differs} pixels differ")
+
+        # The same moves with the scales at 0 settle on the same screens, pixel for pixel.
+        run.scales(0)
+        time.sleep(2)
+        tap("period_next")
+        nodes = settle(on(next_title, "Pay period Nov 8"))
+        differs = region_differs(settled_nov8, run.frame(), top, bottom)
+        check("motion: a period step with animations off settles on the same screen as the animated one", differs == 0,
+              f"{differs} pixels differ")
+        tap("month_prev")
+        settle(on(month_title, "Pay period Nov 8"))
+        tap("month_next")
+        nodes = settle(on(next_title, "Pay period Nov 8"))
+        differs = region_differs(settled_next, run.frame(), top, bottom)
+        check("motion: a month change with animations off settles on the same screen as the animated one", differs == 0,
+              f"{differs} pixels differ")
+        tap("period_prev")
+        settle(on(next_title, "Pay period Oct 25"))
+        tap("month_prev")
+        nodes = settle(on(month_title, "Pay period Oct 25"))
+        differs = region_differs(settled_oct, run.frame(), top, bottom)
+        check("motion: the previous month with animations off settles on the same screen as the animated one", differs == 0,
+              f"{differs} pixels differ")
+        for name, frame in (("settled-oct25-on-november", settled_oct25), ("settled-nov8-on-november", settled_nov8),
+                            ("settled-october", settled_oct)):
+            write_png(motion / f"{name}.png", *frame)
+
+        # One real-time recording at scale 1: a step that stays, a month back, then a step that turns the month.
+        run.scales(1)
+        tap("month_next")
+        settle(on(next_title, "Pay period Oct 25"))
+        tap("period_next")
+        settle(on(next_title, "Pay period Nov 8"))
+        recording = subprocess.Popen([str(ADB), "-e", "shell", "screenrecord", "--time-limit", "20", "/sdcard/motion.mp4"],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=run.env)
+        time.sleep(1.5)
+        for step in ("period_prev", "period_next", "period_prev", "month_prev", "period_next", "month_prev", "month_next"):
+            tap(step)
+            time.sleep(1.2)
+        try:
+            said = recording.communicate(timeout=30)[0]
+        except subprocess.TimeoutExpired:
+            recording.kill()
+            said = recording.communicate()[0]
+        time.sleep(1)
+        run.adb("pull", "/sdcard/motion.mp4", str(motion / "real-time-a-c-d.mp4"), check=False, timeout=120)
+        made = motion / "real-time-a-c-d.mp4"
+        print(f"info  motion: screenrecord {'saved ' + str(made.stat().st_size) + ' bytes' if made.exists() and made.stat().st_size > 0 else 'did not work: ' + repr(said[-300:])}",
+              flush=True)
+    finally:
+        run.scales(0)
+        run.adb("shell", "settings", "put", "system", "user_rotation", "0", check=False)
+        run.adb("shell", "settings", "put", "system", "accelerometer_rotation", rotation, check=False)
+
+
+def motion_one_week(run, check, out):
+    """Films one-week steps from Wed Oct 21 – Tue Oct 27, which wraps a week, on and back, on the seeded month."""
+    motion = out / "motion"
+
+    nodes = run.nodes()
+    places = {name: by_id(nodes, name)[0] for name in ("period_prev", "period_next") if by_id(nodes, name)}
+
+    def tap(name):
+        run.tap(places[name])
+
+    def label(ns):
+        return (text_of(ns, "total_period") or "").split("\n")[0]
+    try:
+        run.scales(10)
+        time.sleep(2)
+        saved = run.burst(motion / "b-one-week-forward", lambda: tap("period_next"), 80)
+        print(f"info  motion: {saved} frames of b-one-week-forward", flush=True)
+        run.wait_for(lambda ns: label(ns).startswith("Pay period Oct 28"), 20)
+        time.sleep(8)
+        nodes = run.nodes()
+        check("motion: one week on settles on Oct 28 – Nov 3 with October 28 to 31 marked",
+              label(nodes).startswith("Pay period Oct 28") and in_pay_period(nodes, "October") == list(range(28, 32)),
+              f"{label(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+        saved = run.burst(motion / "b-one-week-back", lambda: tap("period_prev"), 80)
+        print(f"info  motion: {saved} frames of b-one-week-back", flush=True)
+        run.wait_for(lambda ns: label(ns).startswith("Pay period Oct 21"), 20)
+        time.sleep(8)
+        nodes = run.nodes()
+        check("motion: one week back settles on Oct 21 – Oct 27 with October 21 to 27 marked",
+              label(nodes).startswith("Pay period Oct 21") and in_pay_period(nodes, "October") == list(range(21, 28)),
+              f"{label(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+    finally:
+        run.scales(0)
+        time.sleep(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", help="folder for the logs and the copies of the record")
     parser.add_argument("--shots", help="folder for the screenshots (default: shots/ in the output folder)")
+    parser.add_argument("--motion", action="store_true", help="also film the month screen's animations into motion/")
     args = parser.parse_args()
     out = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="calltally-emu-", dir=os.environ.get("TMPDIR")))
     out.mkdir(parents=True, exist_ok=True)
@@ -604,6 +898,8 @@ def main():
     try:
         run.start_emulator()
         check("emulator started", True)
+        # The app's motion off for the ordinary checks, so a read right after a tap never sees a move halfway.
+        run.scales(0)
         run.build_and_install(grant=False)
         check("test app built and installed", True)
         groups = run.seed()
@@ -1351,19 +1647,40 @@ def main():
         check("with the pay period Oct 25 – Nov 7 shown, October 25 to 31 say they are in the pay period and the 24th does not",
               period_shown(nodes).startswith("Pay period Oct 25") and in_pay_period(nodes, "October") == list(range(25, 32)),
               f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+        next_title = following.strftime("%B %Y")
+        next_name = following.strftime("%B")
         if [n.get("enabled") for n in by_id(nodes, "period_next")] == ["true"]:
+            # 1.1.0: Nov 8 – Nov 21 has no day in October, so the calendar turns to November, the month of its first day.
             run.tap(by_id(nodes, "period_next")[0])
-            nodes = run.wait_for(lambda ns: period_shown(ns).startswith("Pay period Nov 8"), 15)
-            check("one pay period on, Nov 8 – Nov 21, no October day says it, the 25th included",
-                  period_shown(nodes).startswith("Pay period Nov 8") and in_pay_period(nodes, "October") == [],
-                  f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+            nodes = run.wait_for(lambda ns: period_shown(ns).startswith("Pay period Nov 8") and text_of(ns, "month_title") == next_title, 15)
+            check("one pay period on, Nov 8 – Nov 21, has no October day, so the calendar turns to November with the 8th to 21st marked",
+                  period_shown(nodes).startswith("Pay period Nov 8") and text_of(nodes, "month_title") == next_title
+                  and in_pay_period(nodes, next_name) == list(range(8, 22)),
+                  f"{period_shown(nodes)!r} on {text_of(nodes, 'month_title')!r} marked {in_pay_period(nodes)}")
+            # Oct 25 – Nov 7 has November's 1st to 7th on this page, so the month stays.
             nodes = period_back_to(nodes, "Pay period Oct 25")
-            check("one pay period back again, October 25 to 31 say it again",
-                  period_shown(nodes).startswith("Pay period Oct 25") and in_pay_period(nodes, "October") == list(range(25, 32)),
-                  f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+            check("one pay period back, Oct 25 – Nov 7 has days on November's page, so the month stays with the 1st to 7th marked",
+                  period_shown(nodes).startswith("Pay period Oct 25") and text_of(nodes, "month_title") == next_title
+                  and in_pay_period(nodes, next_name) == list(range(1, 8)),
+                  f"{period_shown(nodes)!r} on {text_of(nodes, 'month_title')!r} marked {in_pay_period(nodes)}")
+            # Turning the month by hand never changes the period.
+            if [n.get("enabled") for n in by_id(nodes, "month_prev")] == ["true"]:
+                run.tap(by_id(nodes, "month_prev")[0])
+            nodes = run.wait_for(lambda ns: text_of(ns, "month_title") == seeded_title and bool(in_pay_period(ns, "October")), 15)
+            check("turning back to October by hand keeps the pay period Oct 25 – Nov 7, and October 25 to 31 say it again",
+                  text_of(nodes, "month_title") == seeded_title and period_shown(nodes).startswith("Pay period Oct 25")
+                  and in_pay_period(nodes, "October") == list(range(25, 32)),
+                  f"{period_shown(nodes)!r} on {text_of(nodes, 'month_title')!r} marked {in_pay_period(nodes, 'October')}")
         else:
             print("info  skipped: stepping on from the Oct 25 pay period, as it holds the emulator's date")
         run.shot("10c-seeded-month")
+        if args.motion:
+            motion_two_weeks(run, check, out, seeded_title, next_title, words)
+            # The films leave the screen elsewhere: back to the seeded month and Oct 25 – Nov 7, as a plain run has it.
+            nodes = period_back_to(back_to_seeded(run.wait_for(lambda ns: bool(by_id(ns, "month_title")), 15)), "Pay period Oct 25")
+            check("motion: the films leave the seeded month and Oct 25 – Nov 7 on screen for the checks below",
+                  text_of(nodes, "month_title") == seeded_title and period_shown(nodes).startswith("Pay period Oct 25"),
+                  f"{text_of(nodes, 'month_title')!r} {period_shown(nodes)!r}")
         # 0.9.12: a sideways swipe on the calendar moves one month, within the arrows' limits: right for the month before,
         # left for the next. Each swipe runs across the grid from 20 to 80 percent of its width, starting on a day.
         def swipe(ns, rightward):
@@ -1447,7 +1764,8 @@ def main():
               text_of(nodes, "total_month") == with_text, f"{text_of(nodes, 'total_month')!r} want {with_text!r}")
         run.shot("13-text-time")
         # 0.9.8: a look at the busy day's own screen and at the month's people, for the screenshots only.
-        cell = next((n for n in by_id(nodes, "day_cell") if n.get("content-desc") == words), None)
+        # The busy day's words, and ", in the pay period" after them while its period is on the card.
+        cell = next((n for n in by_id(nodes, "day_cell") if (n.get("content-desc") or "").startswith(words)), None)
         if cell is not None:
             run.tap(cell)
             day_nodes = run.wait_for(lambda ns: bool(by_id(ns, "tab_calls")) or bool(by_id(ns, "entry_action")), 15)
@@ -1573,6 +1891,35 @@ def main():
         check("a seven-day period from Wed Oct 21 to Tue Oct 27: those days say they are in the pay period, the 20th and 28th do not",
               period_shown(nodes).startswith("Pay period Oct 21") and in_pay_period(nodes, "October") == list(range(21, 28)),
               f"{period_shown(nodes)!r} marked {in_pay_period(nodes, 'October')}")
+        if args.motion:
+            motion_one_week(run, check, out)
+        # 1.1.0: a turn to the period's month stays within the months the month arrows allow. With 28-day periods whose
+        # one before the current one runs from late September to the first entry's day, stepping back from November turns
+        # the calendar to October, the first entry's month, not September.
+        seeded_day = datetime.strptime(day, "%Y-%m-%d")
+        limit_first = seeded_day - timedelta(days=27)
+        if (limit_first.year, limit_first.month) < (seeded_day.year, seeded_day.month) \
+                and seeded_day < today <= seeded_day + timedelta(days=28) and today.strftime("%Y-%m") != seeded:
+            answer = run.pay(limit_first.strftime("%Y-%m-%d"), 28)
+            run.sh("am", "force-stop", APP)
+            run.sh("am", "start", "-W", "-n", f"{APP}/.MainActivity")
+            nodes = run.wait_for(lambda ns: (text_of(ns, "total_period") or "").startswith("Pay period ")
+                                 and [n.get("enabled") for n in by_id(ns, "period_prev")] == ["true"], 30)
+            opened = text_of(nodes, "month_title")
+            if by_id(nodes, "period_prev"):
+                run.tap(by_id(nodes, "period_prev")[0])
+            want_label = f"Pay period {limit_first.strftime('%b')} {limit_first.day}"
+            nodes = run.wait_for(lambda ns: period_shown(ns).startswith(want_label) and text_of(ns, "month_title") == seeded_title, 15)
+            run.shot("10g-period-turn-limit")
+            check("stepping back to a 28-day period starting in September turns the calendar to October, the first entry's month",
+                  answer == "pay period set" and opened == f"{name} {year}" and period_shown(nodes).startswith(want_label)
+                  and text_of(nodes, "month_title") == seeded_title
+                  and [n.get("enabled") for n in by_id(nodes, "month_prev")] == ["false"]
+                  and in_pay_period(nodes, "October") == list(range(1, seeded_day.day + 1)),
+                  f"{answer!r} opened on {opened!r}, then {period_shown(nodes)!r} on {text_of(nodes, 'month_title')!r}, "
+                  f"back arrow {[n.get('enabled') for n in by_id(nodes, 'month_prev')]}, marked {in_pay_period(nodes, 'October')}")
+        else:
+            print("info  skipped: the turn's earliest-month limit, as the emulator's date doesn't fit its 28-day periods")
         answer = run.pay("2026-10-25")
         check("pay period set back to the Oct 25 start through the test hook", answer == "pay period set", answer)
 
@@ -1655,6 +2002,12 @@ def main():
     except Exception as error:  # noqa: BLE001 - every failure is reported as a fail line, then everything stops
         check("the check ran to the end", False, f"{type(error).__name__}: {error}")
     finally:
+        if run.emulator is not None:
+            try:
+                run.scales(1)
+                run.adb("shell", "settings", "put", "system", "user_rotation", "0", check=False, timeout=30)
+            except Exception:  # noqa: BLE001 - the emulator may already be gone
+                pass
         run.stop_emulator()
         subprocess.run([str(ADB), "kill-server"], capture_output=True, env=run.env, timeout=30)
     total = len(check.lines)
